@@ -13,6 +13,7 @@ from app.models.login_token import LoginToken
 from app.models.user import User
 from app.services.jwt_service import decode_token
 from app.services.user_service import get_user_by_id
+from app.services.monthly_reset_service import ensure_monthly_reset
 
 settings = get_settings()
 bearer_scheme = HTTPBearer()
@@ -71,4 +72,8 @@ async def get_current_user(
     user = await get_user_by_id(db, user_id)
     if user is None:
         raise credentials_exception
+
+    # Lazy reset: no primeiro acesso do mês, snapshot + reset de categorias (se config ativa)
+    await ensure_monthly_reset(db, user.id)
+
     return user
