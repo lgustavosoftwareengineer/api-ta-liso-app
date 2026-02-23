@@ -8,8 +8,6 @@ async def send_login_code(email: str, code: str) -> None:
     client = boto3.client(
         "ses",
         region_name=settings.aws_region,
-        aws_access_key_id=settings.aws_access_key_id,
-        aws_secret_access_key=settings.aws_secret_access_key,
     )
 
     subject = "Seu código de acesso — Tá Liso"
