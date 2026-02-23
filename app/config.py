@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     aws_access_key_id: str | None = None
     aws_secret_access_key: str | None = None
     ses_from_email: str
+    api_key: str
     environment: str = "development"
     debug: bool = False
     allowed_origins: list[str] = []
