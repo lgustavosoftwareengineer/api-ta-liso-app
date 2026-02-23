@@ -262,12 +262,13 @@ Then o sistema deve remover a categoria
 And ela não deve mais aparecer na listagem
 ```
 
-### Scenario: Excluir categoria com lançamentos
+### Scenario: Excluir categoria com lançamentos exclui as transações em cascata
 ```gherkin
 Given que existe a categoria "Alimentação" com lançamentos registrados
-When o usuário clica no ícone de excluir
-Then o sistema deve exibir alerta informando que a categoria possui lançamentos
-And perguntar se deseja excluir junto com os lançamentos ou apenas arquivar
+When o usuário confirma a exclusão da categoria
+Then o sistema deve remover a categoria
+And todas as transações vinculadas a essa categoria devem ser removidas junto
+And a listagem de transações não deve mais exibir nenhum lançamento daquela categoria
 ```
 
 ### Scenario: Exibir progresso de cada categoria na listagem

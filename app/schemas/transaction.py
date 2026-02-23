@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 
 class TransactionCreate(BaseModel):
-    category_id: str | None = None
+    category_id: str
     description: str
     amount: Decimal
 
@@ -18,7 +18,7 @@ class TransactionUpdate(BaseModel):
 
 class TransactionResponse(BaseModel):
     id: str
-    category_id: str | None
+    category_id: str
     description: str
     amount: Decimal
     created_at: datetime

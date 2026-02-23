@@ -34,7 +34,7 @@ class Category(Base):
 
     user: Mapped["User"] = relationship("User", back_populates="categories")
     transactions: Mapped[list["Transaction"]] = relationship(
-        "Transaction", back_populates="category"
+        "Transaction", back_populates="category", cascade="all, delete-orphan"
     )
     monthly_snapshots: Mapped[list["CategoryMonthlySnapshot"]] = relationship(
         "CategoryMonthlySnapshot", back_populates="category", cascade="all, delete-orphan"

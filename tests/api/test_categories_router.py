@@ -87,3 +87,33 @@ class TestCategoriesRouter:
         assert resp.status_code == 204
         list_resp = await client.get("/api/categories/", headers=headers)
         assert len(list_resp.json()) == 0
+
+    # --- BDD: Excluir categoria com lançamentos exclui as transações em cascata ---
+
+    async def test_delete_category_also_deletes_transactions(
+        self, client: AsyncClient, db_session
+    ):
+        """Ao excluir categoria que possui transações, as transações devem ser removidas junto."""
+        headers, _ = await self._auth_headers(db_session, "delcat_cascade@example.com")
+        cat_resp = await client.post(
+            "/api/categories/",
+            headers=headers,
+            json={"name": "Alimentação", "icon": "🛒", "initial_amount": "1000.00"},
+        )
+        cat_id = cat_resp.json()["id"]
+
+        await client.post(
+            "/api/transactions/",
+            headers=headers,
+            json={"category_id": cat_id, "description": "Mercado", "amount": "200.00"},
+        )
+        await client.post(
+            "/api/transactions/",
+            headers=headers,
+            json={"category_id": cat_id, "description": "Padaria", "amount": "50.00"},
+        )
+
+        await client.delete(f"/api/categories/{cat_id}", headers=headers)
+
+        tx_resp = await client.get("/api/transactions/", headers=headers)
+        assert tx_resp.json() == []
