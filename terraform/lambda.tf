@@ -16,20 +16,3 @@ resource "aws_lambda_function" "api" {
   }
 }
 
-resource "aws_lambda_function" "migrations" {
-  function_name = "ta-liso-migrations"
-  role          = aws_iam_role.lambda_exec.arn
-  package_type  = "Image"
-  image_uri     = var.image_uri
-  timeout       = 300
-
-  image_config {
-    command = ["migrations_handler.handler"]
-  }
-
-  environment {
-    variables = {
-      AWS_SECRETS_NAME = var.secrets_name
-    }
-  }
-}
