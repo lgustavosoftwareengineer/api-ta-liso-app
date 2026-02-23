@@ -15,6 +15,7 @@ services:
 
   api:
     build: .
+    command: sh entrypoint.sh
     ports: ["8000:8000"]
     env_file: .env
     environment:
