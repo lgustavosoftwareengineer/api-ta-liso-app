@@ -11,3 +11,8 @@ variable "secrets_name" {
   description = "Nome do secret no AWS Secrets Manager"
   default     = "talisoapp/develop"
 }
+
+variable "domain_name" {
+  description = "Domínio customizado para a API"
+  default     = "ta-liso-app.online"
+}
