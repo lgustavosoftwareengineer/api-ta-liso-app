@@ -18,6 +18,7 @@ os.environ.setdefault("JWT_EXPIRE_MINUTES", "10080")
 os.environ.setdefault("LOGIN_TOKEN_TTL_SECONDS", "600")
 os.environ.setdefault("SES_FROM_EMAIL", "test@example.com")
 os.environ.setdefault("AWS_REGION", "us-east-1")
+os.environ.setdefault("API_KEY", "test-api-key")
 
 from app.database import Base
 from app import models  # noqa: F401 - registra todos os modelos no Base
@@ -80,6 +81,7 @@ async def client(db_session):
         async with AsyncClient(
             transport=ASGITransport(app=app),
             base_url="http://test",
+            headers={"X-API-Key": "test-api-key"},
         ) as ac:
             yield ac
     finally:

@@ -5,6 +5,7 @@ from app.models.transaction import Transaction
 from app.models.login_token import LoginToken
 from app.models.user_settings import UserSettings
 from app.models.category_monthly_snapshot import CategoryMonthlySnapshot
+from app.models.chat_message import ChatMessage
 
 __all__ = [
     "Base",
@@ -14,4 +15,5 @@ __all__ = [
     "LoginToken",
     "UserSettings",
     "CategoryMonthlySnapshot",
+    "ChatMessage",
 ]

@@ -35,3 +35,6 @@ class User(Base):
     settings: Mapped["UserSettings"] = relationship(
         "UserSettings", back_populates="user", cascade="all, delete-orphan", uselist=False
     )
+    chat_messages: Mapped[list["ChatMessage"]] = relationship(
+        "ChatMessage", back_populates="user", cascade="all, delete-orphan"
+    )

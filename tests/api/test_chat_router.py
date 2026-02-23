@@ -152,3 +152,81 @@ class TestChatRouter:
         data = resp.json()
         assert data["transaction"] is None
         assert "categor" in data["reply"].lower()
+
+    # --- BDD: Histórico do chat ---
+
+    async def test_chat_history_empty_initially(self, client: AsyncClient, db_session):
+        """Histórico começa vazio para um novo usuário."""
+        headers = await self._auth_headers(db_session, "history_empty@example.com")
+        resp = await client.get("/api/chat/", headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["messages"] == []
+
+    async def test_chat_history_saves_messages(self, client: AsyncClient, db_session):
+        """Após enviar uma mensagem, o histórico deve conter user + assistant."""
+        headers = await self._auth_headers(db_session, "history_save@example.com")
+        await self._create_category(client, headers)
+
+        mock_client = _mock_text_response("Quanto você gastou?")
+        with patch("app.services.chat_service.AsyncOpenAI", return_value=mock_client):
+            await client.post(
+                "/api/chat/",
+                headers=headers,
+                json={"message": "gastei no mercado"},
+            )
+
+        resp = await client.get("/api/chat/", headers=headers)
+        assert resp.status_code == 200
+        messages = resp.json()["messages"]
+        assert len(messages) == 2
+        assert messages[0]["role"] == "user"
+        assert messages[0]["content"] == "gastei no mercado"
+        assert messages[1]["role"] == "assistant"
+        assert "Quanto você gastou?" in messages[1]["content"]
+
+    async def test_chat_history_links_transaction(self, client: AsyncClient, db_session):
+        """Mensagem do assistente deve ter transaction_id quando transação foi criada."""
+        headers = await self._auth_headers(db_session, "history_tx@example.com")
+        cat = await self._create_category(client, headers)
+
+        mock_client = _mock_tool_use(cat["name"], "Mercado", 80.0)
+        with patch("app.services.chat_service.AsyncOpenAI", return_value=mock_client):
+            post_resp = await client.post(
+                "/api/chat/",
+                headers=headers,
+                json={"message": "gastei 80 reais no mercado"},
+            )
+
+        transaction_id = post_resp.json()["transaction"]["id"]
+
+        resp = await client.get("/api/chat/", headers=headers)
+        messages = resp.json()["messages"]
+        assistant_msg = next(m for m in messages if m["role"] == "assistant")
+        assert assistant_msg["transaction_id"] == transaction_id
+
+    async def test_chat_history_is_used_as_llm_context(
+        self, client: AsyncClient, db_session
+    ):
+        """O histórico deve ser enviado ao LLM nas chamadas seguintes."""
+        headers = await self._auth_headers(db_session, "history_ctx@example.com")
+        await self._create_category(client, headers)
+
+        mock_client = _mock_text_response("Quanto você gastou?")
+        with patch("app.services.chat_service.AsyncOpenAI", return_value=mock_client) as mock_cls:
+            await client.post(
+                "/api/chat/",
+                headers=headers,
+                json={"message": "gastei no mercado"},
+            )
+            # Segunda mensagem — verifica que o histórico foi incluído
+            await client.post(
+                "/api/chat/",
+                headers=headers,
+                json={"message": "foram 50 reais"},
+            )
+
+        last_call_messages = mock_cls.return_value.chat.completions.create.call_args_list[-1][1]["messages"]
+        roles = [m["role"] for m in last_call_messages]
+        # system + user anterior + assistant anterior + nova mensagem user
+        assert roles.count("user") >= 2
+        assert "assistant" in roles

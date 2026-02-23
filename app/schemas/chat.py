@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel
 
 from app.schemas.transaction import TransactionResponse
@@ -10,3 +12,16 @@ class ChatMessageRequest(BaseModel):
 class ChatResponse(BaseModel):
     reply: str
     transaction: TransactionResponse | None = None
+
+
+class ChatMessageResponse(BaseModel):
+    id: str
+    role: str
+    content: str
+    transaction_id: str | None = None
+    created_at: datetime
+    model_config = {"from_attributes": True}
+
+
+class ChatHistoryResponse(BaseModel):
+    messages: list[ChatMessageResponse]

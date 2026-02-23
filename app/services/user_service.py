@@ -17,6 +17,17 @@ async def get_user_by_email(db: AsyncSession, email: str) -> User | None:
     return result.scalar_one_or_none()
 
 
+async def update_user(db: AsyncSession, user_id: str, name: str) -> User | None:
+    """Atualiza o nome do usuário."""
+    user = await get_user_by_id(db, user_id)
+    if user is None:
+        return None
+    user.name = name
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
 async def create_user_with_settings(db: AsyncSession, email: str) -> User:
     """Cria usuário e suas configurações padrão."""
     user = User(email=email)

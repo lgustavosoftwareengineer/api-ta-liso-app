@@ -1,10 +1,13 @@
 import json
+import re
 from decimal import Decimal
 
 from openai import AsyncOpenAI
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.models.chat_message import ChatMessage
 from app.models.transaction import Transaction
 from app.schemas.transaction import TransactionCreate
 from app.services import categories as category_service
@@ -37,16 +40,72 @@ _TOOL = {
     },
 }
 
+# Número máximo de mensagens anteriores enviadas ao LLM como contexto
+_HISTORY_LIMIT = 20
+
+
+def _extract_tool_args_from_content(content: str) -> dict | None:
+    """Fallback para modelos que retornam tool calls como texto no content.
+
+    Alguns modelos gratuitos do OpenRouter não suportam function calling nativo
+    e emitem o tool call como texto (ex: 'TOOL_CALL>[{...}]'). Esta função
+    extrai os argumentos da função registrar_transacao nesses casos.
+    """
+    try:
+        # Tenta extrair o bloco "arguments": {...} do texto
+        match = re.search(r'"arguments"\s*:\s*(\{[^{}]+\})', content, re.DOTALL)
+        if match:
+            return json.loads(match.group(1))
+    except (json.JSONDecodeError, AttributeError):
+        pass
+    return None
+
+
+async def list_history(db: AsyncSession, user_id: str) -> list[ChatMessage]:
+    """Retorna o histórico completo de mensagens do usuário (ordem cronológica)."""
+    result = await db.execute(
+        select(ChatMessage)
+        .where(ChatMessage.user_id == user_id)
+        .order_by(ChatMessage.created_at.asc())
+    )
+    return list(result.scalars().all())
+
+
+async def _save_messages(
+    db: AsyncSession,
+    user_id: str,
+    user_content: str,
+    assistant_content: str,
+    transaction_id: str | None,
+) -> None:
+    """Salva o par de mensagens (usuário + assistente) no banco."""
+    db.add(ChatMessage(user_id=user_id, role="user", content=user_content))
+    db.add(ChatMessage(
+        user_id=user_id,
+        role="assistant",
+        content=assistant_content,
+        transaction_id=transaction_id,
+    ))
+    await db.commit()
+
 
 async def process_message(
     db: AsyncSession, user_id: str, message: str
 ) -> tuple[str, Transaction | None]:
     categories = await category_service.list_categories(db, user_id)
     if not categories:
-        return (
-            "Você não tem categorias cadastradas ainda. Crie uma categoria primeiro.",
-            None,
-        )
+        reply = "Você não tem categorias cadastradas ainda. Crie uma categoria primeiro."
+        await _save_messages(db, user_id, message, reply, None)
+        return reply, None
+
+    # Carrega as últimas N mensagens para contexto do LLM
+    history_result = await db.execute(
+        select(ChatMessage)
+        .where(ChatMessage.user_id == user_id)
+        .order_by(ChatMessage.created_at.desc())
+        .limit(_HISTORY_LIMIT)
+    )
+    history = list(reversed(history_result.scalars().all()))
 
     category_names = ", ".join(f'"{c.name}"' for c in categories)
     system = (
@@ -61,26 +120,35 @@ async def process_message(
         "5. Chame a função apenas quando tiver categoria, descrição e valor."
     )
 
+    messages = [{"role": "system", "content": system}]
+    for msg in history:
+        messages.append({"role": msg.role, "content": msg.content})
+    messages.append({"role": "user", "content": message})
+
     client = AsyncOpenAI(
         base_url="https://openrouter.ai/api/v1",
         api_key=get_settings().openrouter_api_key,
     )
     response = await client.chat.completions.create(
         model="openrouter/free",
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": message},
-        ],
+        messages=messages,
         tools=[_TOOL],
         tool_choice="auto",
     )
 
     choice = response.choices[0]
-    if not choice.message.tool_calls:
-        reply = choice.message.content or "Não entendi. Pode descrever o gasto com valor e categoria?"
-        return reply, None
 
-    inputs = json.loads(choice.message.tool_calls[0].function.arguments)
+    # Extrai os argumentos: primeiro via tool_calls (padrão), depois via content (fallback)
+    inputs = None
+    if choice.message.tool_calls:
+        inputs = json.loads(choice.message.tool_calls[0].function.arguments)
+    elif choice.message.content:
+        inputs = _extract_tool_args_from_content(choice.message.content)
+
+    if inputs is None:
+        reply = choice.message.content or "Não entendi. Pode descrever o gasto com valor e categoria?"
+        await _save_messages(db, user_id, message, reply, None)
+        return reply, None
     category_name_input = inputs["category_name"].strip().lower()
 
     # Match estrito feito pelo servidor — sem alucinação possível do modelo
@@ -90,11 +158,12 @@ async def process_message(
     )
     if matched is None:
         available = ", ".join(f'"{c.name}"' for c in categories)
-        return (
+        reply = (
             f"Categoria \"{inputs['category_name']}\" não encontrada. "
-            f"Categorias disponíveis: {available}.",
-            None,
+            f"Categorias disponíveis: {available}."
         )
+        await _save_messages(db, user_id, message, reply, None)
+        return reply, None
 
     data = TransactionCreate(
         category_id=matched.id,
@@ -105,7 +174,10 @@ async def process_message(
     try:
         transaction = await transaction_service.create_transaction(db, user_id, data)
     except (LookupError, ValueError) as e:
-        return str(e), None
+        reply = str(e)
+        await _save_messages(db, user_id, message, reply, None)
+        return reply, None
 
     reply = f"Registrei R${transaction.amount:.2f} em {matched.name} ({transaction.description})."
+    await _save_messages(db, user_id, message, reply, transaction.id)
     return reply, transaction

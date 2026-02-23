@@ -2,7 +2,13 @@
   "permissions": {
     "allow": [
       "Bash(.venv/Scripts/python -m pytest tests/ -v)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(git -C \"C:\\\\Users\\\\Luiz Gustavo\\\\Documents\\\\Projects\\\\ta-liso-app\\\\docs\" diff --stat)",
+      "Bash(git -C \"C:\\\\Users\\\\Luiz Gustavo\\\\Documents\\\\Projects\\\\ta-liso-app\\\\docs\" add ta-liso-BDD.md ta-liso-FRONTEND-INTEGRATION.md)",
+      "Bash(git -C:*)",
+      "Bash(git rm:*)",
+      "Bash(git commit:*)"
     ]
   }
 }
