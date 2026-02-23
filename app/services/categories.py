@@ -9,7 +9,7 @@ async def list_categories(db: AsyncSession, user_id: str) -> list[Category]:
     result = await db.execute(
         select(Category).where(Category.user_id == user_id)
     )
-    return result.scalars().all()
+    return list(result.scalars().all())
 
 
 async def create_category(

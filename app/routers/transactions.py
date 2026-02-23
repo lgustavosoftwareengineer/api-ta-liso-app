@@ -1,12 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models.transaction import Transaction
 from app.models.user import User
 from app.schemas.transaction import TransactionCreate, TransactionUpdate, TransactionResponse
 from app.services.auth_service import get_current_user
+from app.services import transactions as transaction_service
 
 router = APIRouter(tags=["transactions"])
 
@@ -16,10 +15,7 @@ async def list_transactions(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(Transaction).where(Transaction.user_id == current_user.id)
-    )
-    return result.scalars().all()
+    return await transaction_service.list_transactions(db, current_user.id)
 
 
 @router.post("/", response_model=TransactionResponse, status_code=status.HTTP_201_CREATED)
@@ -28,16 +24,12 @@ async def create_transaction(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    transaction = Transaction(
-        user_id=current_user.id,
-        category_id=body.category_id,
-        description=body.description,
-        amount=body.amount,
-    )
-    db.add(transaction)
-    await db.commit()
-    await db.refresh(transaction)
-    return transaction
+    try:
+        return await transaction_service.create_transaction(db, current_user.id, body)
+    except LookupError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
 
 @router.put("/{transaction_id}", response_model=TransactionResponse)
@@ -47,21 +39,9 @@ async def update_transaction(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(Transaction).where(
-            Transaction.id == transaction_id,
-            Transaction.user_id == current_user.id,
-        )
-    )
-    transaction = result.scalar_one_or_none()
+    transaction = await transaction_service.update_transaction(db, current_user.id, transaction_id, body)
     if transaction is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transação não encontrada")
-
-    for field, value in body.model_dump(exclude_unset=True).items():
-        setattr(transaction, field, value)
-
-    await db.commit()
-    await db.refresh(transaction)
     return transaction
 
 
@@ -71,15 +51,6 @@ async def delete_transaction(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(Transaction).where(
-            Transaction.id == transaction_id,
-            Transaction.user_id == current_user.id,
-        )
-    )
-    transaction = result.scalar_one_or_none()
-    if transaction is None:
+    deleted = await transaction_service.delete_transaction(db, current_user.id, transaction_id)
+    if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transação não encontrada")
-
-    await db.delete(transaction)
-    await db.commit()

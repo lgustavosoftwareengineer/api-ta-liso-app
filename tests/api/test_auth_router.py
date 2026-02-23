@@ -20,7 +20,7 @@ class TestAuthRouter:
         self, client: AsyncClient, db_session
     ):
         """Usuário solicita código com e-mail válido: 204, token gerado e enviado por e-mail."""
-        with patch("app.routers.auth.send_login_code", new_callable=AsyncMock) as mock_send:
+        with patch("app.services.email.send_login_code", new_callable=AsyncMock) as mock_send:
             resp = await client.post(
                 "/api/auth/request-code",
                 json={"email": "valido@example.com"},
@@ -34,7 +34,7 @@ class TestAuthRouter:
 
     async def test_request_code_invalid_email_returns_422(self, client: AsyncClient):
         """Usuário informa e-mail com formato inválido: sistema exibe erro, não envia e-mail."""
-        with patch("app.routers.auth.send_login_code", new_callable=AsyncMock) as mock_send:
+        with patch("app.services.email.send_login_code", new_callable=AsyncMock) as mock_send:
             resp = await client.post(
                 "/api/auth/request-code",
                 json={"email": "joaoemail.com"},

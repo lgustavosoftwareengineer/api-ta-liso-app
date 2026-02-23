@@ -324,6 +324,56 @@ And o arquivo deve conter: data, descrição, categoria e valor de cada lançame
 
 ---
 
+## Feature: Gerenciamento de Transações
+
+### Scenario: Criar transação reduz o saldo da categoria
+```gherkin
+Given que o usuário possui a categoria "Alimentação" com saldo de R$ 1.000,00
+When ele registra uma transação de R$ 200,00 nessa categoria
+Then o sistema deve salvar a transação com sucesso
+And o current_balance da categoria deve ser reduzido para R$ 800,00
+```
+
+### Scenario: Excluir transação restaura o saldo da categoria
+```gherkin
+Given que o usuário possui a categoria "Alimentação" com saldo de R$ 800,00
+And possui uma transação de R$ 200,00 vinculada a essa categoria
+When ele exclui a transação
+Then o sistema deve remover a transação
+And o current_balance da categoria deve ser restaurado para R$ 1.000,00
+```
+
+### Scenario: Atualizar valor de transação ajusta o saldo da categoria
+```gherkin
+Given que o usuário possui a categoria "Alimentação" com saldo de R$ 800,00
+And possui uma transação de R$ 200,00 vinculada a essa categoria
+When ele altera o valor da transação para R$ 300,00
+Then o sistema deve atualizar a transação
+And o current_balance da categoria deve ser ajustado para R$ 700,00
+```
+
+### Scenario: Bloquear transação com saldo insuficiente (bloqueio ativado)
+```gherkin
+Given que o usuário possui a configuração "Bloquear saldo negativo" ativada
+And a categoria "Saúde" possui saldo de R$ 30,00
+When ele tenta registrar uma transação de R$ 150,00 na categoria "Saúde"
+Then o sistema deve retornar erro 422
+And informar que o saldo é insuficiente (disponível R$ 30,00, solicitado R$ 150,00)
+And não registrar a transação
+And não alterar o saldo da categoria
+```
+
+### Scenario: Permitir transação com saldo insuficiente (bloqueio desativado)
+```gherkin
+Given que o usuário possui a configuração "Bloquear saldo negativo" desativada
+And a categoria "Lazer" possui saldo de R$ 50,00
+When ele registra uma transação de R$ 200,00 na categoria "Lazer"
+Then o sistema deve salvar a transação com sucesso
+And o current_balance da categoria deve ser reduzido para R$ -150,00
+```
+
+---
+
 ## Feature: Reset mensal automático de saldos
 
 ### Scenario: Reset automático no primeiro acesso do mês
@@ -366,28 +416,36 @@ Then o campo de e-mail deve estar desabilitado para edição
 And exibir a mensagem "O e-mail não pode ser alterado"
 ```
 
+### Scenario: Consultar configurações do usuário
+```gherkin
+Given que o usuário está autenticado
+When ele acessa GET /api/settings/
+Then o sistema deve retornar as configurações atuais do usuário
+And incluir os campos: alert_low_balance, monthly_reset, block_negative_balance
+```
+
 ### Scenario: Ativar/desativar notificação de saldo crítico
 ```gherkin
-Given que o usuário está na tela Configurações
-When ele alterna o toggle "Alertar saldo crítico"
+Given que o usuário está autenticado
+When ele envia PATCH /api/settings/ com {"alert_low_balance": false}
 Then o sistema deve salvar a nova preferência
-And aplicá-la imediatamente (exibir ou suprimir alertas conforme o estado)
+And retornar as configurações atualizadas
 ```
 
 ### Scenario: Ativar/desativar reset mensal automático
 ```gherkin
-Given que o usuário está na tela Configurações
-When ele alterna o toggle "Reset mensal automático"
+Given que o usuário está autenticado
+When ele envia PATCH /api/settings/ com {"monthly_reset": false}
 Then o sistema deve salvar a nova preferência
-And aplicá-la no próximo ciclo mensal
+And retornar as configurações atualizadas
 ```
 
 ### Scenario: Ativar/desativar bloqueio de saldo negativo
 ```gherkin
-Given que o usuário está na tela Configurações
-When ele alterna o toggle "Bloquear saldo negativo"
+Given que o usuário está autenticado
+When ele envia PATCH /api/settings/ com {"block_negative_balance": true}
 Then o sistema deve salvar a nova preferência
-And aplicá-la imediatamente no chat ao tentar registrar gastos acima do saldo
+And aplicá-la imediatamente ao tentar registrar gastos acima do saldo
 ```
 
 ### Scenario: Fazer logout
