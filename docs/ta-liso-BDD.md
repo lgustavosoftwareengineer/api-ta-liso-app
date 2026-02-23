@@ -65,6 +65,17 @@ When ele tenta acessar qualquer tela protegida (Início, Chat, Categorias, Resum
 Then o sistema deve redirecionar para a tela de login
 ```
 
+### Scenario: JWT do usuário expira durante uma sessão ativa
+```gherkin
+Given que o usuário está autenticado com um JWT válido
+And o JWT tem validade de 7 dias
+When o JWT expira e o usuário realiza qualquer requisição autenticada
+Then a API deve retornar 401 Unauthorized
+And o frontend deve remover o access_token do localStorage
+And o frontend deve redirecionar o usuário para a tela de login
+And o usuário deve realizar o fluxo de login novamente (solicitar novo código por e-mail)
+```
+
 ---
 
 ## Feature: Tela Início — Visão geral do mês
