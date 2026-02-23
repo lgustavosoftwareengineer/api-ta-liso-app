@@ -1,0 +1,18 @@
+version: "3"
+
+tasks:
+  dev:
+    desc: Inicia o servidor em modo desenvolvimento
+    cmd: uvicorn app.main:app --reload
+
+  test:
+    desc: Executa todos os testes
+    cmd: python -m pytest tests/ -v
+
+  migrate:
+    desc: Aplica migrations pendentes
+    cmd: alembic upgrade head
+
+  migration:
+    desc: Cria uma nova migration (use -- msg="descrição")
+    cmd: alembic revision --autogenerate -m "{{.msg}}"
