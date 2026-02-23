@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.dependencies import verify_api_key
-from app.routers import auth, categories, transactions, user_settings
+from app.routers import auth, categories, chat, transactions, user_settings
 
 settings = get_settings()
 
@@ -29,6 +29,7 @@ _api_deps = [Depends(verify_api_key)]
 app.include_router(auth.router,              prefix="/api/auth",         dependencies=_api_deps)
 app.include_router(categories.router,        prefix="/api/categories",   dependencies=_api_deps)
 app.include_router(transactions.router,      prefix="/api/transactions", dependencies=_api_deps)
+app.include_router(chat.router,              prefix="/api/chat",         dependencies=_api_deps)
 app.include_router(user_settings.router,     prefix="/api/settings",     dependencies=_api_deps)
 
 

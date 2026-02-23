@@ -386,6 +386,48 @@ And o current_balance da categoria deve ser reduzido para R$ -150,00
 
 ---
 
+## Feature: Chat — Registro de gastos via linguagem natural
+
+### Scenario: Registrar gasto via mensagem de texto
+```gherkin
+Given que o usuário está autenticado
+And possui ao menos uma categoria cadastrada
+When ele envia a mensagem "gastei 80 reais no mercado" para o chat
+Then o sistema deve extrair categoria, descrição e valor da mensagem
+And criar a transação vinculada à categoria correta
+And reduzir o saldo da categoria pelo valor informado
+And retornar a transação criada junto com uma confirmação em linguagem natural
+```
+
+### Scenario: Mensagem sem informações suficientes
+```gherkin
+Given que o usuário está autenticado
+And possui ao menos uma categoria cadastrada
+When ele envia uma mensagem incompleta como "gastei no mercado" (sem valor)
+Then o sistema não deve criar nenhuma transação
+And deve retornar uma resposta em português pedindo as informações que faltam
+```
+
+### Scenario: Categoria mencionada não existe (match estrito pelo servidor)
+```gherkin
+Given que o usuário possui apenas a categoria "Débito"
+When ele envia a mensagem "Crédito 100 Corte de cabelo"
+Then o sistema não deve criar nenhuma transação
+And deve retornar mensagem informando que a categoria "Crédito" não foi encontrada
+And deve listar as categorias disponíveis do usuário
+```
+
+### Scenario: Chat sem categorias cadastradas
+```gherkin
+Given que o usuário está autenticado
+And não possui nenhuma categoria cadastrada
+When ele envia qualquer mensagem para o chat
+Then o sistema não deve criar transação
+And deve orientar o usuário a criar uma categoria primeiro
+```
+
+---
+
 ## Feature: Reset mensal automático de saldos
 
 ### Scenario: Reset automático no primeiro acesso do mês

@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     aws_secret_access_key: str | None = None
     ses_from_email: str
     api_key: str
+    openrouter_api_key: str | None = None
     environment: str = "development"
     debug: bool = False
     allowed_origins: list[str] = []

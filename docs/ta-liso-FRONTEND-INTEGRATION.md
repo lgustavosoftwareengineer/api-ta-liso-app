@@ -84,6 +84,44 @@ sequenceDiagram
     end
 ```
 
+### Fluxo de Registro via Chat (linguagem natural)
+
+```mermaid
+sequenceDiagram
+    actor U as Usuário
+    participant F as Frontend (Vue)
+    participant A as API (Lambda)
+    participant LLM as OpenRouter (LLM)
+    participant DB as Banco (Supabase)
+
+    U->>F: digita "gastei 80 reais no mercado"
+    F->>A: POST /api/chat/<br/>X-API-Key + Authorization: Bearer <jwt><br/>{ message: "gastei 80 reais no mercado" }
+    A->>DB: busca categorias do usuário
+    alt sem categorias cadastradas
+        A-->>F: 200 { reply: "Você não tem categorias...", transaction: null }
+        F-->>U: exibe mensagem orientando criar categoria
+    else com categorias
+        A->>LLM: extrai category_name, description, amount da mensagem
+        alt LLM não reconhece os campos
+            LLM-->>A: resposta em texto (sem tool call)
+            A-->>F: 200 { reply: "Não entendi o valor...", transaction: null }
+            F-->>U: exibe reply do LLM
+        else LLM extrai os campos
+            LLM-->>A: tool call com { category_name, description, amount }
+            A->>A: match estrito (case-insensitive) da categoria
+            alt categoria não encontrada
+                A-->>F: 200 { reply: "Categoria X não encontrada...", transaction: null }
+                F-->>U: exibe erro com categorias disponíveis
+            else categoria encontrada
+                A->>DB: insere transação + atualiza current_balance
+                A-->>F: 200 { reply: "Registrei R$80.00 em...", transaction: {...} }
+                F->>F: invalida cache de transactions e categories
+                F-->>U: exibe confirmação + saldo atualizado
+            end
+        end
+    end
+```
+
 ### Fluxo de Token Expirado
 
 ```mermaid
@@ -214,6 +252,7 @@ src/api/generated/
 │                    # usePutApiCategoriesCategoryId, useDeleteApiCategoriesCategoryId
 ├── transactions.ts  # useGetApiTransactions, usePostApiTransactions,
 │                    # usePutApiTransactionsTransactionId, useDeleteApiTransactionsTransactionId
+├── chat.ts          # usePostApiChat
 └── settings.ts      # useGetApiSettings, usePatchApiSettings
 ```
 
@@ -364,6 +403,89 @@ function registrarGasto(description: string, amount: number, categoryId?: string
   })
 }
 </script>
+```
+
+### Chat (registro via linguagem natural)
+
+O endpoint `POST /api/chat/` recebe uma mensagem em português e retorna um `reply` (texto para exibir ao usuário) e, quando uma transação é criada com sucesso, o objeto `transaction`.
+
+**Schema da requisição:**
+```ts
+{ message: string }
+```
+
+**Schema da resposta:**
+```ts
+{
+  reply: string                // sempre presente — exibir ao usuário
+  transaction: {               // null quando nenhuma transação foi criada
+    id: string
+    category_id: string
+    description: string
+    amount: string             // Decimal serializado como string
+    created_at: string
+  } | null
+}
+```
+
+**Casos possíveis (todos retornam HTTP 200):**
+
+| Situação | `transaction` | `reply` |
+|---|---|---|
+| Transação registrada | objeto | "Registrei R$X em Categoria (descrição)." |
+| LLM não identificou os campos | `null` | Pergunta do LLM (ex: "Quanto você gastou?") |
+| Categoria mencionada não existe | `null` | "Categoria X não encontrada. Disponíveis: ..." |
+| Usuário sem categorias cadastradas | `null` | "Você não tem categorias cadastradas ainda..." |
+
+> O match de categoria é **estrito** (case-insensitive exact match) feito pelo servidor — o frontend não precisa tratar erros de categoria. Basta exibir o `reply` sempre.
+
+```vue
+<!-- src/views/ChatView.vue -->
+<script setup lang="ts">
+import { ref } from 'vue'
+import { usePostApiChat } from '@/api/generated/chat'
+import { getGetApiTransactionsQueryKey } from '@/api/generated/transactions'
+import { getGetApiCategoriesQueryKey } from '@/api/generated/categories'
+import { useQueryClient } from '@tanstack/vue-query'
+
+const queryClient = useQueryClient()
+const messages = ref<{ from: 'user' | 'bot'; text: string }[]>([])
+const input = ref('')
+
+const chat = usePostApiChat({
+  mutation: {
+    onSuccess: ({ data }) => {
+      messages.value.push({ from: 'bot', text: data.reply })
+      if (data.transaction) {
+        // Transação criada — atualiza saldos
+        queryClient.invalidateQueries({ queryKey: getGetApiTransactionsQueryKey() })
+        queryClient.invalidateQueries({ queryKey: getGetApiCategoriesQueryKey() })
+      }
+    },
+    onError: () => {
+      messages.value.push({ from: 'bot', text: 'Erro ao processar mensagem. Tente novamente.' })
+    },
+  },
+})
+
+function send() {
+  const text = input.value.trim()
+  if (!text) return
+  messages.value.push({ from: 'user', text })
+  input.value = ''
+  chat.mutate({ data: { message: text } })
+}
+</script>
+
+<template>
+  <div class="chat">
+    <div v-for="(msg, i) in messages" :key="i" :class="msg.from">
+      {{ msg.text }}
+    </div>
+    <input v-model="input" @keyup.enter="send" placeholder="Ex: gastei 50 reais no mercado" />
+    <button @click="send" :disabled="chat.isPending.value">Enviar</button>
+  </div>
+</template>
 ```
 
 ### Configurações do Usuário
@@ -520,6 +642,36 @@ Scenario: Saldo insuficiente com bloqueio desativado
   And ao confirmar, registrar a transação normalmente (saldo ficará negativo)
 ```
 
+### Feature: Registro de gastos via chat (linguagem natural)
+
+```gherkin
+Scenario: Registrar gasto via mensagem de texto
+  Given que o usuário possui a categoria "Alimentação"
+  When ele envia "gastei 80 reais no mercado" via POST /api/chat/
+  Then a API retorna 200 com transaction preenchido
+  And o frontend deve invalidar os caches de transactions e categories
+  And exibir o campo reply como mensagem do bot
+
+Scenario: Mensagem sem valor ou categoria não reconhecidos pelo LLM
+  When o LLM não identifica os campos necessários
+  Then a API retorna 200 com transaction null
+  And reply contém uma pergunta do LLM
+  And o frontend exibe o reply sem alterar os caches
+
+Scenario: Categoria mencionada não existe (match estrito pelo servidor)
+  Given que o usuário possui apenas a categoria "Débito"
+  When ele envia uma mensagem mencionando "Crédito"
+  Then a API retorna 200 com transaction null
+  And reply informa que a categoria não foi encontrada
+  And lista as categorias disponíveis
+
+Scenario: Usuário envia mensagem sem ter categorias cadastradas
+  Given que o usuário não tem nenhuma categoria cadastrada
+  When ele envia qualquer mensagem via chat
+  Then a API retorna 200 com transaction null
+  And reply orienta o usuário a criar uma categoria primeiro
+```
+
 ### Feature: Configurações do usuário
 
 ```gherkin
@@ -545,6 +697,8 @@ Scenario: Ativar/desativar bloqueio de saldo negativo
 - [ ] `npm run gen:api` executado com sucesso — arquivos gerados em `src/api/generated/`
 - [ ] `VueQueryPlugin` registrado no `main.ts`
 - [ ] Hooks de mutação de transações invalidam cache de `categories` também
+- [ ] Hook de chat (`usePostApiChat`) invalida caches de `transactions` e `categories` quando `transaction !== null`
+- [ ] Chat exibe `reply` sempre, independente de `transaction` ser null ou não
 - [ ] Vue Router com guard de autenticação (`beforeEach` checa localStorage)
 - [ ] `queryClient.clear()` no logout
 - [ ] Rodar `npm run gen:api` novamente sempre que o backend mudar
