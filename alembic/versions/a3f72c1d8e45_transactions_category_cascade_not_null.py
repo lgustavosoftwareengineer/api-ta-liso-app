@@ -18,6 +18,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # Remove orphaned transactions (category_id IS NULL) before enforcing NOT NULL
+    op.execute("DELETE FROM transactions WHERE category_id IS NULL")
+
     # Drop the old FK (SET NULL) and recreate with CASCADE + NOT NULL
     op.drop_constraint('transactions_category_id_fkey', 'transactions', type_='foreignkey')
     op.alter_column('transactions', 'category_id', nullable=False)
