@@ -5,6 +5,5 @@ __pycache__
 .gitignore
 *.pyc
 *.pyo
-alembic/versions/
 tests/
 docs/
