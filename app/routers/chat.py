@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.user import User
-from app.schemas.chat import ChatHistoryResponse, ChatMessageRequest, ChatMessageResponse, ChatResponse
+from app.schemas.chat import ChatHistoryResponse, ChatMessageRequest, ChatMessageResponse, ChatResponse, TransactionResponse
 from app.services.auth_service import get_current_user
 from app.services import chat_service
 
@@ -28,4 +28,5 @@ async def chat(
     db: AsyncSession = Depends(get_db),
 ):
     reply, transaction = await chat_service.process_message(db, current_user.id, body.message)
-    return ChatResponse(reply=reply, transaction=transaction)
+
+    return ChatResponse(reply=reply, transaction=TransactionResponse.model_validate(transaction))
