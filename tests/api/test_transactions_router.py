@@ -153,8 +153,15 @@ class TestTransactionsRouter:
     async def test_create_transaction_allowed_when_insufficient_balance_no_block(
         self, client: AsyncClient, db_session
     ):
-        """Com block_negative_balance=False (padrão), transação acima do saldo deve ser permitida."""
-        headers, _ = await self._auth_headers(db_session, "noblock@example.com")
+        """Com block_negative_balance=False (desativado nas config), transação acima do saldo deve ser permitida."""
+        headers, user = await self._auth_headers(db_session, "noblock@example.com")
+        result = await db_session.execute(
+            select(UserSettings).where(UserSettings.user_id == user.id)
+        )
+        settings = result.scalar_one()
+        settings.block_negative_balance = False
+        await db_session.commit()
+
         cat = await self._create_category(client, headers, name="Lazer", amount="50.00")
 
         resp = await client.post(

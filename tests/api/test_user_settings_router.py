@@ -27,7 +27,7 @@ class TestUserSettingsRouter:
         data = resp.json()
         assert data["alert_low_balance"] is True
         assert data["monthly_reset"] is True
-        assert data["block_negative_balance"] is False
+        assert data["block_negative_balance"] is True
 
     # --- BDD: Ativar/desativar notificação de saldo crítico ---
 
