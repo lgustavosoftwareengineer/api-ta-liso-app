@@ -1,5 +1,4 @@
 import json
-import re
 from decimal import Decimal
 
 from openai import AsyncOpenAI
@@ -7,13 +6,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.helpers.chat_helpers import (
+    extract_tool_args_from_content,
+    message_to_simple_string,
+    normalize_category_name,
+)
 from app.models.chat_message import ChatMessage
 from app.models.transaction import Transaction
 from app.schemas.transaction import TransactionCreate
 from app.services import categories as category_service
 from app.services import transactions as transaction_service
 
-# O LLM extrai o nome da categoria como o usuário disse — o servidor faz o match estrito.
+# LLM extracts category name as user said — server does strict match.
 _TOOL = {
     "type": "function",
     "function": {
@@ -40,29 +44,12 @@ _TOOL = {
     },
 }
 
-# Número máximo de mensagens anteriores enviadas ao LLM como contexto
+# Max number of prior messages sent to LLM as context.
 _HISTORY_LIMIT = 20
 
 
-def _extract_tool_args_from_content(content: str) -> dict | None:
-    """Fallback para modelos que retornam tool calls como texto no content.
-
-    Alguns modelos gratuitos do OpenRouter não suportam function calling nativo
-    e emitem o tool call como texto (ex: 'TOOL_CALL>[{...}]'). Esta função
-    extrai os argumentos da função registrar_transacao nesses casos.
-    """
-    try:
-        # Tenta extrair o bloco "arguments": {...} do texto
-        match = re.search(r'"arguments"\s*:\s*(\{[^{}]+\})', content, re.DOTALL)
-        if match:
-            return json.loads(match.group(1))
-    except (json.JSONDecodeError, AttributeError):
-        pass
-    return None
-
-
 async def list_history(db: AsyncSession, user_id: str) -> list[ChatMessage]:
-    """Retorna o histórico completo de mensagens do usuário (ordem cronológica)."""
+    """Return full message history for the user in chronological order."""
     result = await db.execute(
         select(ChatMessage)
         .where(ChatMessage.user_id == user_id)
@@ -78,7 +65,7 @@ async def _save_messages(
     assistant_content: str,
     transaction_id: str | None,
 ) -> None:
-    """Salva o par de mensagens (usuário + assistente) no banco."""
+    """Persist user + assistant message pair to the database."""
     db.add(ChatMessage(user_id=user_id, role="user", content=user_content))
     db.add(ChatMessage(
         user_id=user_id,
@@ -92,13 +79,15 @@ async def _save_messages(
 async def process_message(
     db: AsyncSession, user_id: str, message: str
 ) -> tuple[str, Transaction | None]:
+    message = message_to_simple_string(message)
+
     categories = await category_service.list_categories(db, user_id)
     if not categories:
         reply = "Você não tem categorias cadastradas ainda. Crie uma categoria primeiro."
         await _save_messages(db, user_id, message, reply, None)
         return reply, None
 
-    # Carrega as últimas N mensagens para contexto do LLM
+    # Load last N messages for LLM context
     history_result = await db.execute(
         select(ChatMessage)
         .where(ChatMessage.user_id == user_id)
@@ -109,7 +98,9 @@ async def process_message(
 
     category_names = ", ".join(f'"{c.name}"' for c in categories)
     system = (
-        "Você é um assistente financeiro do app Tá Liso. "
+        "Você é um assistente financeiro do app Tá Liso. ",
+        "Você deve agir como um nordestino raiz, usando expressões e gírias típicas da região. ",
+        "Você pode conversar com o usuário de uma maneira um pouco mais informal, mas sempre mantendo o respeito e a clareza. ",
         "O usuário vai descrever um gasto em linguagem natural (português).\n\n"
         "REGRAS:\n"
         "1. Extraia o nome da categoria exatamente como o usuário disse na mensagem.\n"
@@ -138,36 +129,47 @@ async def process_message(
 
     choice = response.choices[0]
 
-    # Extrai os argumentos: primeiro via tool_calls (padrão), depois via content (fallback)
+    # Extract args: tool_calls first, then content fallback
     inputs = None
     if choice.message.tool_calls:
-        inputs = json.loads(choice.message.tool_calls[0].function.arguments)
+        try:
+            raw_args = choice.message.tool_calls[0].function.arguments
+            inputs = json.loads(raw_args)
+        except (json.JSONDecodeError, TypeError, IndexError):
+            if choice.message.content:
+                inputs = extract_tool_args_from_content(choice.message.content)
     elif choice.message.content:
-        inputs = _extract_tool_args_from_content(choice.message.content)
+        inputs = extract_tool_args_from_content(choice.message.content)
 
     if inputs is None:
         reply = choice.message.content or "Não entendi. Pode descrever o gasto com valor e categoria?"
         await _save_messages(db, user_id, message, reply, None)
         return reply, None
-    category_name_input = inputs["category_name"].strip().lower()
+    category_name_input = normalize_category_name(inputs["category_name"])
 
-    # Match estrito feito pelo servidor — sem alucinação possível do modelo
+    # Strict server-side match — no model hallucination
     matched = next(
         (c for c in categories if c.name.strip().lower() == category_name_input),
         None,
     )
     if matched is None:
         available = ", ".join(f'"{c.name}"' for c in categories)
+        display_name = (inputs["category_name"] or "").strip()
         reply = (
-            f"Categoria \"{inputs['category_name']}\" não encontrada. "
+            f"Categoria \"{display_name}\" não encontrada. "
             f"Categorias disponíveis: {available}."
         )
         await _save_messages(db, user_id, message, reply, None)
         return reply, None
 
+    raw_desc = (inputs.get("description") or "").strip()
+    if len(raw_desc) >= 2 and raw_desc[0] == '"' and raw_desc[-1] == '"':
+        raw_desc = raw_desc[1:-1].strip()
+    description = (raw_desc or "Gasto")[:255]
+
     data = TransactionCreate(
         category_id=matched.id,
-        description=inputs["description"],
+        description=description,
         amount=Decimal(str(inputs["amount"])),
     )
 
