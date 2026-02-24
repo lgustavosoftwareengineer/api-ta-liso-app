@@ -27,6 +27,8 @@ class ChatMessageResponse(BaseModel):
     role: str
     content: str
     transaction_id: str | None = None
+    balance_available: Decimal | None = None
+    balance_requested: Decimal | None = None
     created_at: datetime
     model_config = {"from_attributes": True}
 
