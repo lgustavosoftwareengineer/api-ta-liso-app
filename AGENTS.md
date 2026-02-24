@@ -57,7 +57,6 @@ This was explicitly requested by the user and must always be followed.
 ### Running tests
 
 - `python3 -m pytest tests/ -v` — tests use in-memory SQLite (aiosqlite), no PostgreSQL needed.
-- 6 chat router tests (`tests/api/test_chat_router.py`) fail due to a pre-existing bug: they patch `app.services.chat_service.AsyncOpenAI` but `AsyncOpenAI` is imported in `app.services.ai_service`, not `chat_service`. This is not an environment issue.
 
 ### Running migrations
 
