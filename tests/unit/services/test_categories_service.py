@@ -5,9 +5,13 @@ Criar nova categoria (nome, orçamento, ícone), nome duplicado erro, listar, ed
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import select
 
+from app.models.chat_message import ChatMessage
 from app.schemas.category import CategoryCreate, CategoryUpdate
+from app.schemas.transaction import TransactionCreate
 from app.services import categories as category_service
+from app.services import transactions as transaction_service
 from app.services.user_service import create_user_with_settings
 
 
@@ -120,3 +124,53 @@ class TestCategoriesService:
             db_session, user.id, "id-inexistente"
         )
         assert deleted is False
+
+    async def test_delete_category_also_deletes_chat_messages_referencing_its_transactions(
+        self, db_session
+    ):
+        """Ao excluir categoria, mensagens de chat que referenciam transações dessa categoria são removidas."""
+        user = await create_user_with_settings(db_session, "cat9@example.com")
+        data = CategoryCreate(
+            name="Alimentação",
+            icon="🛒",
+            initial_amount=Decimal("1000.00"),
+        )
+        category = await category_service.create_category(db_session, user.id, data)
+        txn_data = TransactionCreate(
+            category_id=category.id,
+            description="Mercado",
+            amount=Decimal("200.00"),
+        )
+        transaction = await transaction_service.create_transaction(
+            db_session, user.id, txn_data
+        )
+        db_session.add(
+            ChatMessage(
+                user_id=user.id,
+                role="user",
+                content="Debito 200 mercado",
+            )
+        )
+        db_session.add(
+            ChatMessage(
+                user_id=user.id,
+                role="assistant",
+                content="Registrei R$200.00 em Alimentação (Mercado).",
+                transaction_id=transaction.id,
+            )
+        )
+        await db_session.commit()
+
+        deleted = await category_service.delete_category(
+            db_session, user.id, category.id
+        )
+        assert deleted is True
+
+        result = await db_session.execute(
+            select(ChatMessage).where(ChatMessage.user_id == user.id)
+        )
+        messages = list(result.scalars().all())
+        # Only messages with transaction_id pointing to the category's transactions are deleted
+        assert len(messages) == 1
+        assert messages[0].transaction_id is None
+        assert messages[0].role == "user"

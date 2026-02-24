@@ -39,6 +39,7 @@ _TABLES_TO_TRUNCATE = [
     "login_tokens",
     "user_settings",
     "category_monthly_snapshots",
+    "chat_messages",
     "transactions",
     "categories",
     "users",
