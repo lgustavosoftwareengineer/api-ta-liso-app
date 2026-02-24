@@ -23,6 +23,9 @@ class ChatMessage(Base):
     transaction_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("transactions.id", ondelete="SET NULL"), nullable=True
     )
+    category_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("categories.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

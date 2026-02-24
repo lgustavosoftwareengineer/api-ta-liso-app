@@ -64,15 +64,26 @@ async def _save_messages(
     user_content: str,
     assistant_content: str,
     transaction_id: str | None,
+    category_id: str | None = None,
 ) -> None:
-    """Persist user + assistant message pair to the database."""
-    db.add(ChatMessage(user_id=user_id, role="user", content=user_content))
-    db.add(ChatMessage(
-        user_id=user_id,
-        role="assistant",
-        content=assistant_content,
-        transaction_id=transaction_id,
-    ))
+    """Persist user + assistant message pair to the database. category_id is set when the message was processed and category was matched (CASCADE deletes messages when category is removed)."""
+    db.add(
+        ChatMessage(
+            user_id=user_id,
+            role="user",
+            content=user_content,
+            category_id=category_id,
+        )
+    )
+    db.add(
+        ChatMessage(
+            user_id=user_id,
+            role="assistant",
+            content=assistant_content,
+            transaction_id=transaction_id,
+            category_id=category_id,
+        )
+    )
     await db.commit()
 
 
@@ -84,7 +95,7 @@ async def process_message(
     categories = await category_service.list_categories(db, user_id)
     if not categories:
         reply = "Você não tem categorias cadastradas ainda. Crie uma categoria primeiro."
-        await _save_messages(db, user_id, message, reply, None)
+        await _save_messages(db, user_id, message, reply, None, None)
         return reply, None
 
     # Load last N messages for LLM context
@@ -143,7 +154,7 @@ async def process_message(
 
     if inputs is None:
         reply = choice.message.content or "Não entendi. Pode descrever o gasto com valor e categoria?"
-        await _save_messages(db, user_id, message, reply, None)
+        await _save_messages(db, user_id, message, reply, None, None)
         return reply, None
     category_name_input = normalize_category_name(inputs["category_name"])
 
@@ -159,7 +170,7 @@ async def process_message(
             f"Categoria \"{display_name}\" não encontrada. "
             f"Categorias disponíveis: {available}."
         )
-        await _save_messages(db, user_id, message, reply, None)
+        await _save_messages(db, user_id, message, reply, None, None)
         return reply, None
 
     raw_desc = (inputs.get("description") or "").strip()
@@ -177,9 +188,9 @@ async def process_message(
         transaction = await transaction_service.create_transaction(db, user_id, data)
     except (LookupError, ValueError) as e:
         reply = str(e)
-        await _save_messages(db, user_id, message, reply, None)
+        await _save_messages(db, user_id, message, reply, None, None)
         return reply, None
 
     reply = f"Registrei R${transaction.amount:.2f} em {matched.name} ({transaction.description})."
-    await _save_messages(db, user_id, message, reply, transaction.id)
+    await _save_messages(db, user_id, message, reply, transaction.id, matched.id)
     return reply, transaction
