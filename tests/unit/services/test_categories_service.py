@@ -24,7 +24,7 @@ class TestCategoriesService:
         assert result == []
 
     async def test_create_category_saves_with_initial_amount_and_balance(self, db_session):
-        """Criar nova categoria: current_balance igual ao initial_amount."""
+        """Criar nova categoria: current_balance igual ao initial_amount e reset no mês atual."""
         user = await create_user_with_settings(db_session, "cat2@example.com")
         data = CategoryCreate(
             name="Alimentação",
@@ -38,6 +38,8 @@ class TestCategoriesService:
         assert category.initial_amount == Decimal("1000.00")
         assert category.current_balance == Decimal("1000.00")
         assert category.user_id == user.id
+        assert category.reset_month is not None
+        assert category.reset_year is not None
 
     async def test_create_category_duplicate_name_raises_or_returns_error(self, db_session):
         """Criar categoria com nome duplicado: sistema deve exibir erro e não salvar."""

@@ -8,7 +8,7 @@ import os
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
 # Definir env antes de importar app (para get_settings em jwt_service etc.)
@@ -28,6 +28,13 @@ from app.database import get_db
 # SQLite em memória compartilhada: nenhum arquivo em disco
 TEST_DATABASE_URL = "sqlite+aiosqlite:///file:testmem?mode=memory&cache=shared"
 test_engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+
+
+@event.listens_for(test_engine.sync_engine, "connect")
+def _set_sqlite_fk_pragma(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 TestSessionLocal = async_sessionmaker(
     test_engine, expire_on_commit=False, autoflush=False
 )

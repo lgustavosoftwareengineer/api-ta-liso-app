@@ -176,8 +176,10 @@ class TestMonthlyResetService:
         await db_session.commit()
         result = await db_session.execute(select(Category).where(Category.user_id == user.id))
         cat = result.scalar_one()
-        assert cat.reset_month is None
-        assert cat.reset_year is None
+        # Simula categoria antiga/legada sem reset (create_category agora preenche month/year)
+        cat.reset_month = None
+        cat.reset_year = None
+        await db_session.commit()
 
         await ensure_monthly_reset(db_session, user.id, now=_mar_2025())
 

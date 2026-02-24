@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,12 +27,15 @@ async def create_category(
     if existing.scalar_one_or_none() is not None:
         raise ValueError(f"Categoria com o nome '{data.name}' já existe")
 
+    now = datetime.now(timezone.utc)
     category = Category(
         user_id=user_id,
         name=data.name,
         icon=data.icon,
         initial_amount=data.initial_amount,
         current_balance=data.initial_amount,
+        reset_month=now.month,
+        reset_year=now.year,
     )
     db.add(category)
     await db.commit()
