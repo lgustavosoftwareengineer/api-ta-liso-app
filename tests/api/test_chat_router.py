@@ -79,7 +79,7 @@ class TestChatRouter:
         cat = await self._create_category(client, headers)
 
         mock_client = _mock_tool_use(cat["name"], "Mercado", 80.0)
-        with patch("app.services.chat_service.AsyncOpenAI", return_value=mock_client):
+        with patch("app.services.ai_service.AsyncOpenAI", return_value=mock_client):
             resp = await client.post(
                 "/api/chat/",
                 headers=headers,
@@ -101,7 +101,7 @@ class TestChatRouter:
         cat = await self._create_category(client, headers, amount="500.00")
 
         mock_client = _mock_tool_use(cat["name"], "Farmácia", 100.0)
-        with patch("app.services.chat_service.AsyncOpenAI", return_value=mock_client):
+        with patch("app.services.ai_service.AsyncOpenAI", return_value=mock_client):
             await client.post(
                 "/api/chat/",
                 headers=headers,
@@ -122,7 +122,7 @@ class TestChatRouter:
         await self._create_category(client, headers)
 
         mock_client = _mock_text_response("Não entendi o valor. Quanto você gastou?")
-        with patch("app.services.chat_service.AsyncOpenAI", return_value=mock_client):
+        with patch("app.services.ai_service.AsyncOpenAI", return_value=mock_client):
             resp = await client.post(
                 "/api/chat/",
                 headers=headers,
@@ -168,7 +168,7 @@ class TestChatRouter:
         await self._create_category(client, headers)
 
         mock_client = _mock_text_response("Quanto você gastou?")
-        with patch("app.services.chat_service.AsyncOpenAI", return_value=mock_client):
+        with patch("app.services.ai_service.AsyncOpenAI", return_value=mock_client):
             await client.post(
                 "/api/chat/",
                 headers=headers,
@@ -190,7 +190,7 @@ class TestChatRouter:
         cat = await self._create_category(client, headers)
 
         mock_client = _mock_tool_use(cat["name"], "Mercado", 80.0)
-        with patch("app.services.chat_service.AsyncOpenAI", return_value=mock_client):
+        with patch("app.services.ai_service.AsyncOpenAI", return_value=mock_client):
             post_resp = await client.post(
                 "/api/chat/",
                 headers=headers,
@@ -212,7 +212,7 @@ class TestChatRouter:
         await self._create_category(client, headers)
 
         mock_client = _mock_text_response("Quanto você gastou?")
-        with patch("app.services.chat_service.AsyncOpenAI", return_value=mock_client) as mock_cls:
+        with patch("app.services.ai_service.AsyncOpenAI", return_value=mock_client) as mock_cls:
             await client.post(
                 "/api/chat/",
                 headers=headers,
