@@ -3,6 +3,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.exceptions import InsufficientBalanceError
 from app.models.category import Category
 from app.models.transaction import Transaction
 from app.models.user_settings import UserSettings
@@ -33,8 +34,9 @@ async def create_transaction(
             )
             user_settings = settings_result.scalar_one_or_none()
             if user_settings and user_settings.block_negative_balance:
-                raise ValueError(
-                    f"Saldo insuficiente. Disponível: {category.current_balance}, solicitado: {data.amount}"
+                raise InsufficientBalanceError(
+                    available=category.current_balance,
+                    requested=data.amount,
                 )
 
         category.current_balance -= data.amount

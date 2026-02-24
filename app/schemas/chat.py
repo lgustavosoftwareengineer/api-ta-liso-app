@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 
 from pydantic import BaseModel
 
@@ -9,9 +10,16 @@ class ChatMessageRequest(BaseModel):
     message: str
 
 
+class InsufficientBalanceDetail(BaseModel):
+    available: Decimal
+    requested: Decimal
+    message: str
+
+
 class ChatResponse(BaseModel):
     reply: str
     transaction: TransactionResponse | None = None
+    insufficient_balance: InsufficientBalanceDetail | None = None
 
 
 class ChatMessageResponse(BaseModel):

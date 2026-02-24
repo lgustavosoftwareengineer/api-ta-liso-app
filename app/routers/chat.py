@@ -27,6 +27,13 @@ async def chat(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    reply, transaction = await chat_service.process_message(db, current_user.id, body.message)
+    reply, transactionNullable, insufficient_balance = await chat_service.process_message(db, current_user.id, body.message)
 
-    return ChatResponse(reply=reply, transaction=TransactionResponse.model_validate(transaction))
+    if transactionNullable is not None:
+        return ChatResponse(
+            reply=reply,
+            transaction=TransactionResponse.model_validate(transactionNullable),
+        )
+
+    return ChatResponse(reply=reply, insufficient_balance=insufficient_balance)
+    

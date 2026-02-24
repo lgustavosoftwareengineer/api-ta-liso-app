@@ -1,11 +1,15 @@
 import json
 from decimal import Decimal
+from typing import Any, cast
 
 from openai import AsyncOpenAI
+from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolParam
+from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCall
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.exceptions import InsufficientBalanceError
 from app.helpers.chat_helpers import (
     extract_tool_args_from_content,
     message_to_simple_string,
@@ -13,12 +17,13 @@ from app.helpers.chat_helpers import (
 )
 from app.models.chat_message import ChatMessage
 from app.models.transaction import Transaction
+from app.schemas.chat import InsufficientBalanceDetail
 from app.schemas.transaction import TransactionCreate
 from app.services import categories as category_service
 from app.services import transactions as transaction_service
 
 # LLM extracts category name as user said — server does strict match.
-_TOOL = {
+_TOOL: ChatCompletionToolParam = {
     "type": "function",
     "function": {
         "name": "registrar_transacao",
@@ -89,14 +94,14 @@ async def _save_messages(
 
 async def process_message(
     db: AsyncSession, user_id: str, message: str
-) -> tuple[str, Transaction | None]:
+) -> tuple[str, Transaction | None, InsufficientBalanceDetail | None]:
     message = message_to_simple_string(message)
 
     categories = await category_service.list_categories(db, user_id)
     if not categories:
         reply = "Você não tem categorias cadastradas ainda. Crie uma categoria primeiro."
         await _save_messages(db, user_id, message, reply, None, None)
-        return reply, None
+        return reply, None, None
 
     # Load last N messages for LLM context
     history_result = await db.execute(
@@ -109,9 +114,9 @@ async def process_message(
 
     category_names = ", ".join(f'"{c.name}"' for c in categories)
     system = (
-        "Você é um assistente financeiro do app Tá Liso. ",
-        "Você deve agir como um nordestino raiz, usando expressões e gírias típicas da região. ",
-        "Você pode conversar com o usuário de uma maneira um pouco mais informal, mas sempre mantendo o respeito e a clareza. ",
+        "Você é um assistente financeiro do app Tá Liso. "
+        "Você deve agir como um nordestino raiz, usando expressões e gírias típicas da região. "
+        "Você pode conversar com o usuário de uma maneira um pouco mais informal, mas sempre mantendo o respeito e a clareza. "
         "O usuário vai descrever um gasto em linguagem natural (português).\n\n"
         "REGRAS:\n"
         "1. Extraia o nome da categoria exatamente como o usuário disse na mensagem.\n"
@@ -122,7 +127,7 @@ async def process_message(
         "5. Chame a função apenas quando tiver categoria, descrição e valor."
     )
 
-    messages = [{"role": "system", "content": system}]
+    messages: list[Any] = [{"role": "system", "content": system}]
     for msg in history:
         messages.append({"role": msg.role, "content": msg.content})
     messages.append({"role": "user", "content": message})
@@ -133,7 +138,7 @@ async def process_message(
     )
     response = await client.chat.completions.create(
         model="openrouter/free",
-        messages=messages,
+        messages=cast(list[ChatCompletionMessageParam], messages),
         tools=[_TOOL],
         tool_choice="auto",
     )
@@ -144,7 +149,7 @@ async def process_message(
     inputs = None
     if choice.message.tool_calls:
         try:
-            raw_args = choice.message.tool_calls[0].function.arguments
+            raw_args = cast(ChatCompletionMessageToolCall, choice.message.tool_calls[0]).function.arguments
             inputs = json.loads(raw_args)
         except (json.JSONDecodeError, TypeError, IndexError):
             if choice.message.content:
@@ -155,7 +160,7 @@ async def process_message(
     if inputs is None:
         reply = choice.message.content or "Não entendi. Pode descrever o gasto com valor e categoria?"
         await _save_messages(db, user_id, message, reply, None, None)
-        return reply, None
+        return reply, None, None
     category_name_input = normalize_category_name(inputs["category_name"])
 
     # Strict server-side match — no model hallucination
@@ -171,7 +176,7 @@ async def process_message(
             f"Categorias disponíveis: {available}."
         )
         await _save_messages(db, user_id, message, reply, None, None)
-        return reply, None
+        return reply, None, None
 
     raw_desc = (inputs.get("description") or "").strip()
     if len(raw_desc) >= 2 and raw_desc[0] == '"' and raw_desc[-1] == '"':
@@ -186,11 +191,16 @@ async def process_message(
 
     try:
         transaction = await transaction_service.create_transaction(db, user_id, data)
+    except InsufficientBalanceError as e:
+        reply = str(e)
+        await _save_messages(db, user_id, message, reply, None, None)
+        detail = InsufficientBalanceDetail(available=e.available, requested=e.requested, message="Saldo insuficiente")
+        return reply, None, detail
     except (LookupError, ValueError) as e:
         reply = str(e)
         await _save_messages(db, user_id, message, reply, None, None)
-        return reply, None
+        return reply, None, None
 
     reply = f"Registrei R${transaction.amount:.2f} em {matched.name} ({transaction.description})."
     await _save_messages(db, user_id, message, reply, transaction.id, matched.id)
-    return reply, transaction
+    return reply, transaction, None
