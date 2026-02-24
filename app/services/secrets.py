@@ -24,4 +24,12 @@ def get_aws_secrets() -> dict:
     except ClientError as e:
         raise e
 
-    return json.loads(response["SecretString"])
+    raw = response["SecretString"]
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"Secret {secret_name!r} contém JSON inválido "
+            f"(linha {e.lineno}, coluna {e.colno}). "
+            "Corrija no AWS Secrets Manager (vírgula extra, aspas, comentários?)."
+        ) from e
