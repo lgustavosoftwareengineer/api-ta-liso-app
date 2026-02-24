@@ -3,7 +3,7 @@ version: "3"
 tasks:
   dev:
     desc: Inicia o servidor em modo desenvolvimento
-    cmd: uvicorn app.main:app --reload
+    cmd: alembic upgrade head; uvicorn app.main:app --reload
 
   start:
     desc: Roda migrations e inicia o servidor (produção)
