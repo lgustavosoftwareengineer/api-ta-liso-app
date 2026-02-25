@@ -19,13 +19,13 @@ This was explicitly requested by the user and must always be followed.
 - FastAPI + SQLAlchemy 2.0 async (asyncpg in prod, aiosqlite in tests)
 - Pydantic v2 + pydantic-settings (SettingsConfigDict, not ConfigDict)
 - Alembic (psycopg2 sync URL for migrations, asyncpg for app)
-- AWS SES via boto3 for email
+- Resend for email (send_login_code)
 - JWT sessions + 6-digit login codes stored in DB (login_tokens table)
 
 ## Key files
 - app/config.py — @lru_cache on get_settings(); clear with get_settings.cache_clear()
 - app/services/auth_service.py — get_current_user dependency + login code logic + request_login_code + authenticate
-- app/services/email.py — send_login_code via AWS SES (get_settings() inside function)
+- app/services/email.py — send_login_code via Resend (get_settings() inside function)
 - app/services/transactions.py — business logic for transactions (balance update, block_negative_balance)
 - app/services/user_settings_service.py — get/update user settings
 - tests/conftest.py — SQLite in-memory, table truncation per test, client fixture
@@ -50,7 +50,7 @@ This was explicitly requested by the user and must always be followed.
 
 ### Environment setup
 
-- A `.env` file is required at the repo root. See `.env.example` for reference. Required keys: `DATABASE_URL`, `JWT_SECRET_KEY`, `SES_FROM_EMAIL`, `API_KEY`.
+- A `.env` file is required at the repo root. See `.env.example` for reference. Required keys: `DATABASE_URL`, `JWT_SECRET_KEY`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `API_KEY`.
 - `python-dotenv` is imported by `app/config.py` but is **not** listed in `requirements.txt`. Install it alongside: `pip install -r requirements.txt python-dotenv`.
 - `AWS_SECRETS_NAME` must be empty or unset for local dev (skips AWS Secrets Manager lookup).
 
