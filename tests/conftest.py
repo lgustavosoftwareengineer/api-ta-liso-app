@@ -11,12 +11,14 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
-# Definir env antes de importar app (para get_settings em jwt_service etc.)
+# Definir env antes de importar app (para get_settings em database, jwt_service etc.)
+os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///file:testmem?mode=memory&cache=shared")
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-at-least-32-characters-long")
 os.environ.setdefault("JWT_ALGORITHM", "HS256")
 os.environ.setdefault("JWT_EXPIRE_MINUTES", "10080")
 os.environ.setdefault("LOGIN_TOKEN_TTL_SECONDS", "600")
-os.environ.setdefault("SES_FROM_EMAIL", "test@example.com")
+os.environ.setdefault("RESEND_API_KEY", "re_test_fake_key_for_tests")
+os.environ.setdefault("RESEND_FROM_EMAIL", "test@example.com")
 os.environ.setdefault("AWS_REGION", "us-east-1")
 os.environ.setdefault("API_KEY", "test-api-key")
 
