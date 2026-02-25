@@ -21,7 +21,8 @@ class Settings(BaseSettings):
     aws_region: str | None = None
     aws_access_key_id: str | None = None
     aws_secret_access_key: str | None = None
-    ses_from_email: str
+    resend_api_key: str
+    resend_from_email: str
     api_key: str
     openrouter_api_key: str | None = None
     environment: str = "development"

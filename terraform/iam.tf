@@ -22,8 +22,3 @@ resource "aws_iam_role_policy_attachment" "secrets" {
   role       = aws_iam_role.lambda_exec.name
   policy_arn = "arn:aws:iam::aws:policy/SecretsManagerReadWrite"
 }
-
-resource "aws_iam_role_policy_attachment" "ses" {
-  role       = aws_iam_role.lambda_exec.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSESFullAccess"
-}

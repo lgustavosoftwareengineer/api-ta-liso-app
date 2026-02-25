@@ -1,14 +1,11 @@
-import boto3
-from botocore.exceptions import ClientError
+import resend
 
 from app.config import get_settings
 
+
 async def send_login_code(email: str, code: str) -> None:
     settings = get_settings()
-    client = boto3.client(
-        "ses",
-        region_name=settings.aws_region,
-    )
+    resend.api_key = settings.resend_api_key
 
     subject = "Seu código de acesso — Tá Liso"
     body_text = f"Seu código de login é: {code}\n\nEle expira em 10 minutos."
@@ -25,16 +22,12 @@ async def send_login_code(email: str, code: str) -> None:
     """
 
     try:
-        client.send_email(
-            Source=settings.ses_from_email,
-            Destination={"ToAddresses": [email]},
-            Message={
-                "Subject": {"Data": subject, "Charset": "UTF-8"},
-                "Body": {
-                    "Text": {"Data": body_text, "Charset": "UTF-8"},
-                    "Html": {"Data": body_html, "Charset": "UTF-8"},
-                },
-            },
-        )
-    except ClientError as e:
-        raise RuntimeError(f"Falha ao enviar e-mail: {e.response['Error']['Message']}")
+        resend.Emails.send({
+            "from": settings.resend_from_email,
+            "to": [email],
+            "subject": subject,
+            "html": body_html,
+            "text": body_text,
+        })
+    except Exception as e:
+        raise RuntimeError(f"Falha ao enviar e-mail: {e}")
