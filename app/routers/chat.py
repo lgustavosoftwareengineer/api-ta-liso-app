@@ -3,7 +3,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.user import User
+from app.schemas.category import CategoryResponse
 from app.schemas.chat import ChatHistoryResponse, ChatMessageRequest, ChatMessageResponse, ChatResponse, TransactionResponse
+from app.schemas.chat_result import ChatProcessResult
 from app.services.auth_service import get_current_user
 from app.services import chat_service
 
@@ -27,13 +29,14 @@ async def chat(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    reply, transactionNullable, insufficient_balance = await chat_service.process_message(db, current_user.id, body.message)
+    result: ChatProcessResult = await chat_service.process_message(db, current_user.id, body.message)
 
-    if transactionNullable is not None:
-        return ChatResponse(
-            reply=reply,
-            transaction=TransactionResponse.model_validate(transactionNullable),
-        )
-
-    return ChatResponse(reply=reply, insufficient_balance=insufficient_balance)
-    
+    return ChatResponse(
+        reply=result.reply,
+        action=result.action,
+        transaction=TransactionResponse.model_validate(result.transaction) if result.transaction else None,
+        insufficient_balance=result.insufficient_balance,
+        categories=[CategoryResponse.model_validate(c) for c in result.categories] if result.categories else None,
+        category=CategoryResponse.model_validate(result.category) if result.category else None,
+        transactions=[TransactionResponse.model_validate(t) for t in result.transactions] if result.transactions else None,
+    )

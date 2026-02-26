@@ -1,5 +1,5 @@
 """
-Testes do Chat Router — BDD: Registro de gastos via linguagem natural.
+Testes do Chat Router — BDD: Controle completo via linguagem natural.
 """
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -11,13 +11,12 @@ from app.services.user_service import create_user_with_settings
 from app.services.jwt_service import create_token
 
 
-def _mock_tool_use(category_name: str, description: str, amount: float) -> MagicMock:
-    """Simula resposta do OpenRouter com tool_call (campos extraídos com sucesso)."""
+def _mock_tool_use(tool_name: str, args: dict) -> MagicMock:
+    """Simula resposta do OpenRouter com tool_call."""
     tool_call = MagicMock()
     tool_call.function = MagicMock()
-    tool_call.function.arguments = json.dumps(
-        {"category_name": category_name, "description": description, "amount": amount}
-    )
+    tool_call.function.name = tool_name
+    tool_call.function.arguments = json.dumps(args)
 
     message = MagicMock()
     message.tool_calls = [tool_call]
@@ -78,7 +77,7 @@ class TestChatRouter:
         headers = await self._auth_headers(db_session, "chat_create@example.com")
         cat = await self._create_category(client, headers)
 
-        mock_client = _mock_tool_use(cat["name"], "Mercado", 80.0)
+        mock_client = _mock_tool_use("registrar_transacao", {"category_name": cat["name"], "description": "Mercado", "amount": 80.0})
         with patch("app.services.ai_service.AsyncOpenAI", return_value=mock_client):
             resp = await client.post(
                 "/api/chat/",
@@ -100,7 +99,7 @@ class TestChatRouter:
         headers = await self._auth_headers(db_session, "chat_balance@example.com")
         cat = await self._create_category(client, headers, amount="500.00")
 
-        mock_client = _mock_tool_use(cat["name"], "Farmácia", 100.0)
+        mock_client = _mock_tool_use("registrar_transacao", {"category_name": cat["name"], "description": "Farmácia", "amount": 100.0})
         with patch("app.services.ai_service.AsyncOpenAI", return_value=mock_client):
             await client.post(
                 "/api/chat/",
@@ -139,14 +138,16 @@ class TestChatRouter:
     async def test_chat_without_categories_returns_guidance(
         self, client: AsyncClient, db_session
     ):
-        """Sem categorias, resposta orienta o usuário a criar uma."""
+        """Sem categorias, registrar_transacao orienta o usuário a criar uma."""
         headers = await self._auth_headers(db_session, "chat_nocat@example.com")
 
-        resp = await client.post(
-            "/api/chat/",
-            headers=headers,
-            json={"message": "gastei 50 reais no mercado"},
-        )
+        mock_client = _mock_tool_use("registrar_transacao", {"category_name": "Mercado", "description": "mercado", "amount": 50.0})
+        with patch("app.services.ai_service.AsyncOpenAI", return_value=mock_client):
+            resp = await client.post(
+                "/api/chat/",
+                headers=headers,
+                json={"message": "gastei 50 reais no mercado"},
+            )
 
         assert resp.status_code == 200
         data = resp.json()
@@ -189,7 +190,7 @@ class TestChatRouter:
         headers = await self._auth_headers(db_session, "history_tx@example.com")
         cat = await self._create_category(client, headers)
 
-        mock_client = _mock_tool_use(cat["name"], "Mercado", 80.0)
+        mock_client = _mock_tool_use("registrar_transacao", {"category_name": cat["name"], "description": "Mercado", "amount": 80.0})
         with patch("app.services.ai_service.AsyncOpenAI", return_value=mock_client):
             post_resp = await client.post(
                 "/api/chat/",
@@ -230,3 +231,211 @@ class TestChatRouter:
         # system + user anterior + assistant anterior + nova mensagem user
         assert roles.count("user") >= 2
         assert "assistant" in roles
+
+    # --- BDD: Listar categorias via chat ---
+
+    async def test_chat_lists_categories(self, client: AsyncClient, db_session):
+        """listar_categorias retorna lista de categorias no reply."""
+        headers = await self._auth_headers(db_session, "chat_listcat@example.com")
+        cat = await self._create_category(client, headers, name="Lazer", amount="300.00")
+
+        mock_client = _mock_tool_use("listar_categorias", {})
+        with patch("app.services.ai_service.AsyncOpenAI", return_value=mock_client):
+            resp = await client.post(
+                "/api/chat/",
+                headers=headers,
+                json={"message": "lista minhas categorias"},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["action"] == "list_categories"
+        assert data["categories"] is not None
+        assert any(c["id"] == cat["id"] for c in data["categories"])
+        assert cat["name"] in data["reply"]
+
+    # --- BDD: Criar categoria via chat ---
+
+    async def test_chat_creates_category(self, client: AsyncClient, db_session):
+        """criar_categoria cria e retorna a categoria na resposta."""
+        headers = await self._auth_headers(db_session, "chat_createcat@example.com")
+
+        mock_client = _mock_tool_use("criar_categoria", {"name": "Transporte", "icon": "🚗", "initial_amount": 500.0})
+        with patch("app.services.ai_service.AsyncOpenAI", return_value=mock_client):
+            resp = await client.post(
+                "/api/chat/",
+                headers=headers,
+                json={"message": "cria a categoria Transporte com 500 reais"},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["action"] == "create_category"
+        assert data["category"] is not None
+        assert data["category"]["name"] == "Transporte"
+        assert float(data["category"]["initial_amount"]) == 500.0
+
+    # --- BDD: Editar categoria via chat ---
+
+    async def test_chat_edits_category(self, client: AsyncClient, db_session):
+        """editar_categoria atualiza e retorna a categoria atualizada."""
+        headers = await self._auth_headers(db_session, "chat_editcat@example.com")
+        cat = await self._create_category(client, headers, name="Transporte", amount="500.00")
+
+        mock_client = _mock_tool_use("editar_categoria", {"category_name": "Transporte", "new_budget": 800.0})
+        with patch("app.services.ai_service.AsyncOpenAI", return_value=mock_client):
+            resp = await client.post(
+                "/api/chat/",
+                headers=headers,
+                json={"message": "muda o orçamento de Transporte para 800"},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["action"] == "edit_category"
+        assert data["category"] is not None
+        assert float(data["category"]["initial_amount"]) == 800.0
+
+    # --- BDD: Deletar categoria via chat ---
+
+    async def test_chat_deletes_category(self, client: AsyncClient, db_session):
+        """deletar_categoria remove a categoria."""
+        headers = await self._auth_headers(db_session, "chat_deletecat@example.com")
+        cat = await self._create_category(client, headers, name="Lazer", amount="200.00")
+
+        mock_client = _mock_tool_use("deletar_categoria", {"category_name": "Lazer"})
+        with patch("app.services.ai_service.AsyncOpenAI", return_value=mock_client):
+            resp = await client.post(
+                "/api/chat/",
+                headers=headers,
+                json={"message": "deleta a categoria Lazer"},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["action"] == "delete_category"
+        assert "Lazer" in data["reply"]
+
+        # Verify category is actually gone
+        cat_resp = await client.get("/api/categories/", headers=headers)
+        assert not any(c["id"] == cat["id"] for c in cat_resp.json())
+
+    # --- BDD: Listar transações via chat ---
+
+    async def test_chat_lists_transactions(self, client: AsyncClient, db_session):
+        """listar_transacoes retorna as transações recentes."""
+        headers = await self._auth_headers(db_session, "chat_listtx@example.com")
+        cat = await self._create_category(client, headers)
+
+        # Create a transaction first
+        mock_create = _mock_tool_use("registrar_transacao", {"category_name": cat["name"], "description": "Mercado", "amount": 50.0})
+        with patch("app.services.ai_service.AsyncOpenAI", return_value=mock_create):
+            await client.post("/api/chat/", headers=headers, json={"message": "gastei 50 no mercado"})
+
+        mock_list = _mock_tool_use("listar_transacoes", {})
+        with patch("app.services.ai_service.AsyncOpenAI", return_value=mock_list):
+            resp = await client.post(
+                "/api/chat/",
+                headers=headers,
+                json={"message": "mostra meus últimos gastos"},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["action"] == "list_transactions"
+        assert data["transactions"] is not None
+        assert len(data["transactions"]) >= 1
+
+    # --- BDD: Editar transação via chat ---
+
+    async def test_chat_edits_transaction(self, client: AsyncClient, db_session):
+        """editar_transacao atualiza valor/descrição da transação."""
+        headers = await self._auth_headers(db_session, "chat_edittx@example.com")
+        cat = await self._create_category(client, headers)
+
+        mock_create = _mock_tool_use("registrar_transacao", {"category_name": cat["name"], "description": "Mercado", "amount": 50.0})
+        with patch("app.services.ai_service.AsyncOpenAI", return_value=mock_create):
+            await client.post("/api/chat/", headers=headers, json={"message": "gastei 50 no mercado"})
+
+        mock_edit = _mock_tool_use("editar_transacao", {"transaction_description": "Mercado", "new_amount": 90.0})
+        with patch("app.services.ai_service.AsyncOpenAI", return_value=mock_edit):
+            resp = await client.post(
+                "/api/chat/",
+                headers=headers,
+                json={"message": "muda o valor do mercado para 90"},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["action"] == "edit_transaction"
+        assert data["transaction"] is not None
+        assert float(data["transaction"]["amount"]) == 90.0
+
+    # --- BDD: Deletar transação via chat ---
+
+    async def test_chat_deletes_transaction(self, client: AsyncClient, db_session):
+        """deletar_transacao remove a transação e restaura o saldo."""
+        headers = await self._auth_headers(db_session, "chat_deletetx@example.com")
+        cat = await self._create_category(client, headers, amount="500.00")
+
+        mock_create = _mock_tool_use("registrar_transacao", {"category_name": cat["name"], "description": "Mercado", "amount": 50.0})
+        with patch("app.services.ai_service.AsyncOpenAI", return_value=mock_create):
+            await client.post("/api/chat/", headers=headers, json={"message": "gastei 50 no mercado"})
+
+        mock_delete = _mock_tool_use("deletar_transacao", {"transaction_description": "Mercado"})
+        with patch("app.services.ai_service.AsyncOpenAI", return_value=mock_delete):
+            resp = await client.post(
+                "/api/chat/",
+                headers=headers,
+                json={"message": "deleta o gasto do mercado"},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["action"] == "delete_transaction"
+        assert "Mercado" in data["reply"]
+
+        # Verify balance restored
+        cat_resp = await client.get("/api/categories/", headers=headers)
+        updated = next(c for c in cat_resp.json() if c["id"] == cat["id"])
+        assert float(updated["current_balance"]) == 500.0
+
+    # --- BDD: Editar transação não encontrada ---
+
+    async def test_chat_edit_transaction_not_found(self, client: AsyncClient, db_session):
+        """Quando descrição não bate com nenhuma transação, retorna mensagem de erro."""
+        headers = await self._auth_headers(db_session, "chat_edittx_nf@example.com")
+        await self._create_category(client, headers)
+
+        mock_edit = _mock_tool_use("editar_transacao", {"transaction_description": "xpto inexistente", "new_amount": 99.0})
+        with patch("app.services.ai_service.AsyncOpenAI", return_value=mock_edit):
+            resp = await client.post(
+                "/api/chat/",
+                headers=headers,
+                json={"message": "muda o valor do xpto para 99"},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["transaction"] is None
+        assert "xpto inexistente" in data["reply"]
+
+    # --- BDD: Criar categoria com nome duplicado ---
+
+    async def test_chat_create_category_duplicate_name(self, client: AsyncClient, db_session):
+        """Criar categoria com nome duplicado retorna mensagem de erro sem crash."""
+        headers = await self._auth_headers(db_session, "chat_dupcat@example.com")
+        await self._create_category(client, headers, name="Alimentação")
+
+        mock_client = _mock_tool_use("criar_categoria", {"name": "Alimentação", "initial_amount": 300.0})
+        with patch("app.services.ai_service.AsyncOpenAI", return_value=mock_client):
+            resp = await client.post(
+                "/api/chat/",
+                headers=headers,
+                json={"message": "cria a categoria Alimentação com 300 reais"},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["category"] is None
+        assert "Alimentação" in data["reply"]

@@ -59,6 +59,7 @@ async def ensure_tables():
     global _tables_created
     if not _tables_created:
         async with test_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
             await conn.run_sync(Base.metadata.create_all)
         _tables_created = True
 

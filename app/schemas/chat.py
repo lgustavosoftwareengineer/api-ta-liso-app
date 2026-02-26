@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel
 
+from app.schemas.category import CategoryResponse
 from app.schemas.transaction import TransactionResponse
 
 
@@ -18,8 +19,12 @@ class InsufficientBalanceDetail(BaseModel):
 
 class ChatResponse(BaseModel):
     reply: str
+    action: str | None = None
     transaction: TransactionResponse | None = None
     insufficient_balance: InsufficientBalanceDetail | None = None
+    categories: list[CategoryResponse] | None = None
+    category: CategoryResponse | None = None
+    transactions: list[TransactionResponse] | None = None
 
 
 class ChatMessageResponse(BaseModel):
@@ -27,6 +32,7 @@ class ChatMessageResponse(BaseModel):
     role: str
     content: str
     transaction_id: str | None = None
+    category_id: str | None = None
     balance_available: Decimal | None = None
     balance_requested: Decimal | None = None
     created_at: datetime

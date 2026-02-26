@@ -5,10 +5,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import InsufficientBalanceError
 from app.helpers.chat_helpers import message_to_simple_string, normalize_category_name
+from app.models.category import Category
 from app.models.chat_message import ChatMessage
 from app.models.transaction import Transaction
+from app.schemas.category import CategoryCreate, CategoryUpdate
 from app.schemas.chat import InsufficientBalanceDetail
-from app.schemas.transaction import TransactionCreate
+from app.schemas.chat_result import ChatProcessResult
+from app.schemas.transaction import TransactionCreate, TransactionUpdate
 from app.services import ai_service
 from app.services import categories as category_service
 from app.services import transactions as transaction_service
@@ -58,12 +61,21 @@ async def _fetch_recent_history(db: AsyncSession, user_id: str) -> list[ChatMess
     return list(reversed(result.scalars().all()))
 
 
-def _find_category(categories, category_name: str):
+def _find_category(categories: list[Category], category_name: str) -> Category | None:
     normalized = normalize_category_name(category_name)
     return next((c for c in categories if c.name.strip().lower() == normalized), None)
 
 
-def _build_transaction_data(inputs: dict, category) -> TransactionCreate:
+def _find_transactions_by_description(
+    transactions: list[Transaction], description: str
+) -> list[Transaction]:
+    """Case-insensitive partial match; returns all matches sorted most-recent first."""
+    needle = description.strip().lower()
+    matches = [t for t in transactions if needle in t.description.lower()]
+    return sorted(matches, key=lambda t: t.created_at, reverse=True)
+
+
+def _build_transaction_data(inputs: dict, category: Category) -> TransactionCreate:
     raw_desc = (inputs.get("description") or "").strip()
     if len(raw_desc) >= 2 and raw_desc[0] == '"' and raw_desc[-1] == '"':
         raw_desc = raw_desc[1:-1].strip()
@@ -77,48 +89,223 @@ def _build_transaction_data(inputs: dict, category) -> TransactionCreate:
 
 async def _reject(
     db: AsyncSession, user_id: str, message: str, reply: str
-) -> tuple[str, None, None]:
+) -> ChatProcessResult:
     await _save_messages(db, user_id, message, reply, None)
-    return reply, None, None
+    return ChatProcessResult(reply=reply)
 
 
-async def process_message(
-    db: AsyncSession, user_id: str, message: str
-) -> tuple[str, Transaction | None, InsufficientBalanceDetail | None]:
-    message = message_to_simple_string(message)
+# ── Tool handlers ─────────────────────────────────────────────────────────────
 
-    categories = await category_service.list_categories(db, user_id)
+async def _handle_listar_categorias(
+    db: AsyncSession, user_id: str, message: str, args: dict, categories: list[Category]
+) -> ChatProcessResult:
+    if not categories:
+        reply = "Você ainda não tem nenhuma categoria cadastrada, não. Crie uma primeiro!"
+    else:
+        lines = [f"• {c.icon or '📦'} {c.name} — saldo R${c.current_balance:.2f} / R${c.initial_amount:.2f}" for c in categories]
+        reply = "Suas categorias:\n" + "\n".join(lines)
+    await _save_messages(db, user_id, message, reply, None)
+    return ChatProcessResult(reply=reply, action="list_categories", categories=categories)
+
+
+async def _handle_criar_categoria(
+    db: AsyncSession, user_id: str, message: str, args: dict, categories: list[Category]
+) -> ChatProcessResult:
+    name = (args.get("name") or "").strip()
+    icon = args.get("icon")
+    initial_amount = args.get("initial_amount", 0)
+    if not name:
+        return await _reject(db, user_id, message, "Preciso do nome da categoria, visse?")
+    try:
+        cat = await category_service.create_category(
+            db, user_id, CategoryCreate(name=name, icon=icon, initial_amount=Decimal(str(initial_amount)))
+        )
+    except ValueError as e:
+        return await _reject(db, user_id, message, str(e))
+    reply = f"Categoria {cat.icon or ''} {cat.name} criada com orçamento de R${cat.initial_amount:.2f}!"
+    await _save_messages(db, user_id, message, reply, None, category_id=cat.id)
+    return ChatProcessResult(reply=reply, action="create_category", category=cat)
+
+
+async def _handle_editar_categoria(
+    db: AsyncSession, user_id: str, message: str, args: dict, categories: list[Category]
+) -> ChatProcessResult:
+    category_name = (args.get("category_name") or "").strip()
+    matched = _find_category(categories, category_name)
+    if matched is None:
+        available = ", ".join(f'"{c.name}"' for c in categories)
+        return await _reject(db, user_id, message, f'Categoria "{category_name}" não encontrada. Disponíveis: {available}.')
+    update_data = CategoryUpdate(
+        name=args.get("new_name"),
+        icon=args.get("new_icon"),
+        initial_amount=Decimal(str(args["new_budget"])) if args.get("new_budget") is not None else None,
+    )
+    updated = await category_service.update_category(db, user_id, matched.id, update_data)
+    if updated is None:
+        return await _reject(db, user_id, message, "Não consegui atualizar a categoria.")
+    reply = f"Categoria {updated.icon or ''} {updated.name} atualizada!"
+    await _save_messages(db, user_id, message, reply, None, category_id=updated.id)
+    return ChatProcessResult(reply=reply, action="edit_category", category=updated)
+
+
+async def _handle_deletar_categoria(
+    db: AsyncSession, user_id: str, message: str, args: dict, categories: list[Category]
+) -> ChatProcessResult:
+    category_name = (args.get("category_name") or "").strip()
+    matched = _find_category(categories, category_name)
+    if matched is None:
+        available = ", ".join(f'"{c.name}"' for c in categories)
+        return await _reject(db, user_id, message, f'Categoria "{category_name}" não encontrada. Disponíveis: {available}.')
+    deleted = await category_service.delete_category(db, user_id, matched.id)
+    if not deleted:
+        return await _reject(db, user_id, message, "Não consegui deletar a categoria.")
+    reply = f'Categoria "{matched.name}" deletada com sucesso!'
+    await _save_messages(db, user_id, message, reply, None)
+    return ChatProcessResult(reply=reply, action="delete_category")
+
+
+async def _handle_listar_transacoes(
+    db: AsyncSession, user_id: str, message: str, args: dict, categories: list[Category]
+) -> ChatProcessResult:
+    all_transactions = await transaction_service.list_transactions(db, user_id)
+    recent = sorted(all_transactions, key=lambda t: t.created_at, reverse=True)[:10]
+    if not recent:
+        reply = "Você não tem nenhuma transação registrada ainda, não!"
+    else:
+        cat_map = {c.id: c for c in categories}
+        lines = []
+        for t in recent:
+            cat = cat_map.get(t.category_id)
+            cat_name = cat.name if cat else "?"
+            lines.append(f"• {t.description} — {cat_name} — R${t.amount:.2f} — {t.created_at.strftime('%d/%m/%Y')}")
+        reply = "Suas últimas transações:\n" + "\n".join(lines)
+    await _save_messages(db, user_id, message, reply, None)
+    return ChatProcessResult(reply=reply, action="list_transactions", transactions=recent)
+
+
+async def _handle_editar_transacao(
+    db: AsyncSession, user_id: str, message: str, args: dict, categories: list[Category]
+) -> ChatProcessResult:
+    description = (args.get("transaction_description") or "").strip()
+    all_transactions = await transaction_service.list_transactions(db, user_id)
+    matches = _find_transactions_by_description(all_transactions, description)
+    if not matches:
+        return await _reject(db, user_id, message, f'Não encontrei nenhuma transação com "{description}".')
+    if len(matches) > 1:
+        lines = [f"• {t.description} — R${t.amount:.2f} — {t.created_at.strftime('%d/%m/%Y')}" for t in matches[:5]]
+        reply = f'Encontrei várias transações com "{description}". Qual delas?\n' + "\n".join(lines)
+        return await _reject(db, user_id, message, reply)
+    target = matches[0]
+    update_kwargs: dict = {}
+    if args.get("new_description") is not None:
+        raw = (args.get("new_description") or "").strip()
+        update_kwargs["description"] = (raw[:255] if raw else "Gasto")
+    if args.get("new_amount") is not None:
+        update_kwargs["amount"] = Decimal(str(args["new_amount"]))
+    if args.get("new_category_name"):
+        new_cat = _find_category(categories, args["new_category_name"])
+        if new_cat is None:
+            available = ", ".join(f'"{c.name}"' for c in categories)
+            return await _reject(db, user_id, message, f'Categoria "{args["new_category_name"]}" não encontrada. Disponíveis: {available}.')
+        update_kwargs["category_id"] = new_cat.id
+    update_data = TransactionUpdate(**update_kwargs)
+    updated = await transaction_service.update_transaction(db, user_id, target.id, update_data)
+    if updated is None:
+        return await _reject(db, user_id, message, "Não consegui atualizar a transação.")
+    reply = f"Transação atualizada: {updated.description} — R${updated.amount:.2f}."
+    await _save_messages(db, user_id, message, reply, updated.id)
+    await db.refresh(updated)
+    return ChatProcessResult(reply=reply, action="edit_transaction", transaction=updated)
+
+
+async def _handle_deletar_transacao(
+    db: AsyncSession, user_id: str, message: str, args: dict, categories: list[Category]
+) -> ChatProcessResult:
+    description = (args.get("transaction_description") or "").strip()
+    all_transactions = await transaction_service.list_transactions(db, user_id)
+    matches = _find_transactions_by_description(all_transactions, description)
+    if not matches:
+        return await _reject(db, user_id, message, f'Não encontrei nenhuma transação com "{description}".')
+    if len(matches) > 1:
+        lines = [f"• {t.description} — R${t.amount:.2f} — {t.created_at.strftime('%d/%m/%Y')}" for t in matches[:5]]
+        reply = f'Encontrei várias transações com "{description}". Qual delas?\n' + "\n".join(lines)
+        return await _reject(db, user_id, message, reply)
+    target = matches[0]
+    target_desc = target.description
+    deleted = await transaction_service.delete_transaction(db, user_id, target.id)
+    if not deleted:
+        return await _reject(db, user_id, message, "Não consegui deletar a transação.")
+    reply = f'Transação "{target_desc}" deletada com sucesso!'
+    await _save_messages(db, user_id, message, reply, None)
+    return ChatProcessResult(reply=reply, action="delete_transaction")
+
+
+async def _handle_registrar_transacao(
+    db: AsyncSession, user_id: str, message: str, args: dict, categories: list[Category]
+) -> ChatProcessResult:
     if not categories:
         return await _reject(db, user_id, message, "Você não tem categorias cadastradas ainda. Crie uma categoria primeiro.")
 
-    history = await _fetch_recent_history(db, user_id)
-    response = await ai_service.get_chat_response(message, history, categories)
-
-    if isinstance(response, str):
-        return await _reject(db, user_id, message, response)
-
-    inputs = response
-    if inputs is None:
-        return await _reject(db, user_id, message, "Não entendi. Pode descrever o gasto com valor e categoria?")
-
-    matched = _find_category(categories, inputs["category_name"])
+    matched = _find_category(categories, args.get("category_name", ""))
     if matched is None:
         available = ", ".join(f'"{c.name}"' for c in categories)
-        display_name = (inputs["category_name"] or "").strip()
+        display_name = (args.get("category_name") or "").strip()
         return await _reject(db, user_id, message, f'Categoria "{display_name}" não encontrada. Categorias disponíveis: {available}.')
 
-    data = _build_transaction_data(inputs, matched)
+    data = _build_transaction_data(args, matched)
 
     try:
         transaction = await transaction_service.create_transaction(db, user_id, data)
     except InsufficientBalanceError as e:
         reply = "Saldo insuficiente"
         await _save_messages(db, user_id, message, reply, None, balance_available=e.available, balance_requested=e.requested)
-        return reply, None, InsufficientBalanceDetail(available=e.available, requested=e.requested, message=reply)
+        return ChatProcessResult(
+            reply=reply,
+            insufficient_balance=InsufficientBalanceDetail(available=e.available, requested=e.requested, message=reply),
+        )
     except (LookupError, ValueError) as e:
         return await _reject(db, user_id, message, str(e))
 
     reply = f"Registrei R${transaction.amount:.2f} em {matched.name} ({transaction.description})."
     await _save_messages(db, user_id, message, reply, transaction.id, matched.id)
     await db.refresh(transaction)
-    return reply, transaction, None
+    return ChatProcessResult(reply=reply, action="create_transaction", transaction=transaction)
+
+
+async def process_message(
+    db: AsyncSession, user_id: str, message: str
+) -> ChatProcessResult:
+    message = message_to_simple_string(message)
+
+    categories = await category_service.list_categories(db, user_id)
+    history = await _fetch_recent_history(db, user_id)
+    response = await ai_service.get_chat_response(message, history, categories)
+
+    if isinstance(response, str):
+        return await _reject(db, user_id, message, response)
+
+    if response is None:
+        return await _reject(db, user_id, message, "Não entendi. Pode repetir de outro jeito?")
+
+    tool = response["tool"]
+    args = response["args"]
+
+    match tool:
+        case "listar_categorias":
+            return await _handle_listar_categorias(db, user_id, message, args, categories)
+        case "criar_categoria":
+            return await _handle_criar_categoria(db, user_id, message, args, categories)
+        case "editar_categoria":
+            return await _handle_editar_categoria(db, user_id, message, args, categories)
+        case "deletar_categoria":
+            return await _handle_deletar_categoria(db, user_id, message, args, categories)
+        case "listar_transacoes":
+            return await _handle_listar_transacoes(db, user_id, message, args, categories)
+        case "editar_transacao":
+            return await _handle_editar_transacao(db, user_id, message, args, categories)
+        case "deletar_transacao":
+            return await _handle_deletar_transacao(db, user_id, message, args, categories)
+        case "registrar_transacao":
+            return await _handle_registrar_transacao(db, user_id, message, args, categories)
+        case _:
+            return await _reject(db, user_id, message, "Não entendi o que você quis dizer. Pode repetir?")
