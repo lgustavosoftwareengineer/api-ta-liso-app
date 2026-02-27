@@ -1,6 +1,7 @@
 import json
 import os
 from functools import lru_cache
+from typing import List
 
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -27,7 +28,7 @@ class Settings(BaseSettings):
     openrouter_api_key: str | None = None
     environment: str = "development"
     debug: bool = False
-    allowed_origins: list[str] = []
+    allowed_origins: List[str] = []
 
 
 @lru_cache
