@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     resend_from_email: str
     api_key: str
     openrouter_api_key: str | None = None
+    telegram_bot_token: str | None = None
+    telegram_webhook_secret: str | None = None
     environment: str = "development"
     debug: bool = False
     allowed_origins: List[str] = []

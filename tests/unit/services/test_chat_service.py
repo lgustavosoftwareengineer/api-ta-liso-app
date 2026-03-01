@@ -81,3 +81,20 @@ class TestApplyDateFilter:
         for f in [None, "hoje", "semana", "mes"]:
             result, _ = _apply_date_filter([], f)
             assert result == []
+
+    def test_exact_date_filters_that_day(self):
+        """date_filter com data ISO (YYYY-MM-DD) retorna apenas transações daquele dia."""
+        # 15/fev/2025 10:00 UTC
+        day_start = datetime(2025, 2, 15, 0, 0, 0, tzinfo=timezone.utc)
+        within = [
+            _make_transaction(day_start),
+            _make_transaction(datetime(2025, 2, 15, 12, 0, 0, tzinfo=timezone.utc)),
+            _make_transaction(datetime(2025, 2, 15, 23, 59, 59, tzinfo=timezone.utc)),
+        ]
+        outside = [
+            _make_transaction(datetime(2025, 2, 14, 23, 59, 59, tzinfo=timezone.utc)),
+            _make_transaction(datetime(2025, 2, 16, 0, 0, 0, tzinfo=timezone.utc)),
+        ]
+        result, label = _apply_date_filter(within + outside, "2025-02-15")
+        assert len(result) == 3
+        assert "15/02/2025" in label

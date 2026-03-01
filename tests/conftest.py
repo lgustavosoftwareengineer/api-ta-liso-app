@@ -21,6 +21,7 @@ os.environ.setdefault("RESEND_API_KEY", "re_test_fake_key_for_tests")
 os.environ.setdefault("RESEND_FROM_EMAIL", "test@example.com")
 os.environ.setdefault("AWS_REGION", "us-east-1")
 os.environ.setdefault("API_KEY", "test-api-key")
+os.environ.setdefault("TELEGRAM_WEBHOOK_SECRET", "test-telegram-secret")
 
 from app.database import Base
 from app import models  # noqa: F401 - registra todos os modelos no Base
@@ -45,6 +46,8 @@ _tables_created = False
 
 # Ordem: tabelas que referenciam outras primeiro (FK), depois users
 _TABLES_TO_TRUNCATE = [
+    "telegram_pending_auth",
+    "telegram_users",
     "login_tokens",
     "user_settings",
     "category_monthly_snapshots",

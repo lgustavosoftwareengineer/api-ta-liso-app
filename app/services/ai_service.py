@@ -37,7 +37,7 @@ async def get_chat_response(
         "3. Criar categoria — chame `criar_categoria` com nome e orçamento inicial.\n"
         "4. Editar categoria — chame `editar_categoria` com nome atual e campos a alterar.\n"
         "5. Deletar categoria — chame `deletar_categoria` com o nome.\n"
-        "6. Listar transações — chame `listar_transacoes`; use `date_filter='hoje'` para gastos de hoje, `'semana'` para 7 dias, `'mes'` para o mês atual.\n"
+        "6. Listar transações — chame `listar_transacoes`; use `date_filter` com 'hoje', 'semana', 'mes' ou uma data no formato YYYY-MM-DD (ex: 2025-02-15) para um dia exato.\n"
         "7. Editar transação — chame `editar_transacao` com a descrição e campos a alterar.\n"
         "8. Deletar transação — chame `deletar_transacao` com a descrição.\n\n"
         "REGRAS PARA REGISTRO DE GASTOS:\n"

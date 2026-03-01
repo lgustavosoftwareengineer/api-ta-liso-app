@@ -121,8 +121,7 @@ CHAT_COMPLETION_TOOLS: list[ChatCompletionToolParam] = [
                 "properties": {
                     "date_filter": {
                         "type": "string",
-                        "enum": ["hoje", "semana", "mes"],
-                        "description": "Filtra por período: 'hoje' para gastos do dia, 'semana' para os últimos 7 dias, 'mes' para o mês atual. Omitir retorna as 10 mais recentes.",
+                        "description": "Filtra por período. Use 'hoje', 'semana' ou 'mes'; ou uma data exata no formato ISO (YYYY-MM-DD), ex: 2025-02-15. Omitir retorna as 10 mais recentes.",
                     },
                 },
                 "required": [],

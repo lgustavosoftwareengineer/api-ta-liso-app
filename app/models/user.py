@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import String, DateTime, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+if TYPE_CHECKING:
+    from app.models.telegram_user import TelegramUser
 
 from app.database import Base
 
@@ -37,4 +41,7 @@ class User(Base):
     )
     chat_messages: Mapped[list["ChatMessage"]] = relationship(
         "ChatMessage", back_populates="user", cascade="all, delete-orphan"
+    )
+    telegram_user: Mapped[Optional["TelegramUser"]] = relationship(
+        "TelegramUser", back_populates="user", uselist=False, cascade="all, delete-orphan"
     )

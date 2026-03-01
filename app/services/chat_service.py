@@ -165,24 +165,52 @@ async def _handle_deletar_categoria(
     return ChatProcessResult(reply=reply, action="delete_category")
 
 
-def _apply_date_filter(transactions: list[Transaction], date_filter: str | None) -> tuple[list[Transaction], str]:
+def _parse_date_filter(date_filter: str | None) -> tuple[datetime, datetime | None, str] | None:
+    """
+    Interpreta date_filter e retorna (início, fim ou None, label) ou None para "sem filtro".
+    - "hoje" -> dia atual (até agora)
+    - "semana" -> últimos 7 dias
+    - "mes" -> mês atual
+    - "YYYY-MM-DD" -> dia exato (00:00 a 23:59:59)
+    Quando fim é None, considera até "agora".
+    """
+    if not date_filter or not date_filter.strip():
+        return None
+    date_filter = date_filter.strip()
     now = datetime.now(timezone.utc)
     if date_filter == "hoje":
-        cutoff = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        label = "hoje"
-    elif date_filter == "semana":
-        cutoff = now - timedelta(days=7)
-        label = "nos últimos 7 dias"
-    elif date_filter == "mes":
-        cutoff = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        label = f"em {now.strftime('%B/%Y')}"
-    else:
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        return (start, None, "hoje")
+    if date_filter == "semana":
+        start = now - timedelta(days=7)
+        return (start, None, "nos últimos 7 dias")
+    if date_filter == "mes":
+        start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        return (start, None, f"em {now.strftime('%B/%Y')}")
+    # Data exata no formato ISO (YYYY-MM-DD)
+    try:
+        day = datetime.strptime(date_filter, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        start = day.replace(hour=0, minute=0, second=0, microsecond=0)
+        end = start + timedelta(days=1) - timedelta(microseconds=1)
+        label = day.strftime("%d/%m/%Y")
+        return (start, end, f"em {label}")
+    except ValueError:
+        return None
+
+
+def _apply_date_filter(transactions: list[Transaction], date_filter: str | None) -> tuple[list[Transaction], str]:
+    parsed = _parse_date_filter(date_filter)
+    if parsed is None:
         return sorted(transactions, key=lambda t: t.created_at, reverse=True)[:10], ""
 
-    filtered = [
-        t for t in transactions
-        if t.created_at.replace(tzinfo=timezone.utc) >= cutoff
-    ]
+    start, end, label = parsed
+    def in_range(t: Transaction) -> bool:
+        utc_at = t.created_at.replace(tzinfo=timezone.utc) if t.created_at.tzinfo is None else t.created_at
+        if end is None:
+            return utc_at >= start
+        return start <= utc_at <= end
+
+    filtered = [t for t in transactions if in_range(t)]
     return sorted(filtered, key=lambda t: t.created_at, reverse=True), label
 
 

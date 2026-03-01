@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.dependencies import verify_api_key
-from app.routers import auth, categories, chat, transactions, user_settings, users
+from app.routers import auth, categories, chat, telegram, transactions, user_settings, users
 
 settings = get_settings()
 
@@ -26,6 +26,7 @@ app.add_middleware(
 
 _api_deps = [Depends(verify_api_key)]
 
+app.include_router(telegram.router)
 app.include_router(auth.router,              prefix="/api/auth",         dependencies=_api_deps)
 app.include_router(categories.router,        prefix="/api/categories",   dependencies=_api_deps)
 app.include_router(transactions.router,      prefix="/api/transactions", dependencies=_api_deps)
