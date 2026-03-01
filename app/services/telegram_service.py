@@ -26,7 +26,11 @@ async def send_message(chat_id: int, text: str) -> None:
     """Send a text message to a Telegram chat via Bot API."""
     settings = get_settings()
     if not settings.telegram_bot_token:
-        logger.warning("TELEGRAM_BOT_TOKEN not set; skipping send_message")
+        logger.warning(
+            "TELEGRAM_BOT_TOKEN not set; skipping send_message (chat_id=%s). "
+            "Check env/Secret Manager key TELEGRAM_BOT_TOKEN.",
+            chat_id,
+        )
         return
     url = f"{TELEGRAM_API_BASE}/bot{settings.telegram_bot_token}/sendMessage"
     async with httpx.AsyncClient() as client:

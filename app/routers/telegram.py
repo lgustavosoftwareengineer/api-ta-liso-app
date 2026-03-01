@@ -1,4 +1,6 @@
 """Telegram webhook endpoint: receives updates and delegates to telegram_service."""
+import logging
+
 from fastapi import APIRouter, BackgroundTasks, Request, status
 from fastapi.responses import JSONResponse
 
@@ -6,13 +8,17 @@ from app.config import get_settings
 from app.database import AsyncSessionLocal
 from app.services import telegram_service
 
+logger = logging.getLogger(__name__)
 router = APIRouter(tags=["telegram"])
 
 
 async def _process_webhook_task(chat_id: int, text: str) -> None:
     """Run in background with its own DB session."""
-    async with AsyncSessionLocal() as db:
-        await telegram_service.handle_message(db, chat_id, text)
+    try:
+        async with AsyncSessionLocal() as db:
+            await telegram_service.handle_message(db, chat_id, text)
+    except Exception as e:
+        logger.exception("Telegram webhook task failed chat_id=%s text=%r: %s", chat_id, text, e)
 
 
 @router.post("/webhooks/telegram", status_code=status.HTTP_200_OK)
@@ -42,5 +48,6 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
     text = message.get("text")
     if not text or not isinstance(text, str):
         return JSONResponse(status_code=status.HTTP_200_OK, content={})
+    logger.info("Telegram webhook: chat_id=%s text=%r", chat_id, text)
     background_tasks.add_task(_process_webhook_task, chat_id, text)
     return {}
