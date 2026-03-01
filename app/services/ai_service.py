@@ -37,7 +37,7 @@ async def get_chat_response(
         "3. Criar categoria — chame `criar_categoria` com nome e orçamento inicial.\n"
         "4. Editar categoria — chame `editar_categoria` com nome atual e campos a alterar.\n"
         "5. Deletar categoria — chame `deletar_categoria` com o nome.\n"
-        "6. Listar transações recentes — chame `listar_transacoes`.\n"
+        "6. Listar transações — chame `listar_transacoes`; use `date_filter='hoje'` para gastos de hoje, `'semana'` para 7 dias, `'mes'` para o mês atual.\n"
         "7. Editar transação — chame `editar_transacao` com a descrição e campos a alterar.\n"
         "8. Deletar transação — chame `deletar_transacao` com a descrição.\n\n"
         "REGRAS PARA REGISTRO DE GASTOS:\n"
@@ -47,8 +47,8 @@ async def get_chat_response(
         "4. Chame `registrar_transacao` apenas quando tiver categoria, descrição e valor.\n\n"
         "CONVERSA GERAL:\n"
         "- Pode conversar sobre finanças pessoais, dar dicas e tirar dúvidas sobre o app.\n"
-        "- Nunca invente saldos, totais ou histórico financeiro do usuário — você não tem acesso a esses dados.\n"
-        "- Se perguntado sobre dados que não possui, diga que não tem acesso e oriente o usuário a consultar o app."
+        "- Para qualquer pergunta sobre gastos, transações ou saldos, use as ferramentas disponíveis — nunca diga que não tem acesso.\n"
+        "- Só diga que não tem acesso se realmente não houver ferramenta para aquela informação."
     )
 
     messages: list[Any] = [{"role": "system", "content": system}]
@@ -61,11 +61,11 @@ async def get_chat_response(
         api_key=get_settings().openrouter_api_key,
     )
     response = await client.chat.completions.create(
-        model="google/gemini-2.0-flash-exp:free",
+        model="google/gemini-2.5-flash",
         messages=cast(list[ChatCompletionMessageParam], messages),
         tools=CHAT_COMPLETION_TOOLS,
         tool_choice="auto",
-        temperature=0.3,
+        temperature=0.5,
     )
 
     choice = response.choices[0]

@@ -420,6 +420,76 @@ class TestChatRouter:
         assert data["transaction"] is None
         assert "xpto inexistente" in data["reply"]
 
+    # --- BDD: Listar transações com filtro de data ---
+
+    async def test_chat_lists_transactions_hoje(self, client: AsyncClient, db_session):
+        """listar_transacoes com date_filter='hoje' retorna transações do dia com total."""
+        headers = await self._auth_headers(db_session, "chat_hoje@example.com")
+        cat = await self._create_category(client, headers)
+
+        mock_create = _mock_tool_use("registrar_transacao", {"category_name": cat["name"], "description": "Almoço", "amount": 35.0})
+        with patch("app.services.ai_service.AsyncOpenAI", return_value=mock_create):
+            await client.post("/api/chat/", headers=headers, json={"message": "gastei 35 no almoço"})
+
+        mock_list = _mock_tool_use("listar_transacoes", {"date_filter": "hoje"})
+        with patch("app.services.ai_service.AsyncOpenAI", return_value=mock_list):
+            resp = await client.post(
+                "/api/chat/",
+                headers=headers,
+                json={"message": "quanto gastei hoje?"},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["action"] == "list_transactions"
+        assert data["transactions"] is not None
+        assert len(data["transactions"]) >= 1
+        assert "hoje" in data["reply"]
+        assert "Total" in data["reply"]
+
+    async def test_chat_lists_transactions_semana(self, client: AsyncClient, db_session):
+        """listar_transacoes com date_filter='semana' retorna transações da semana com total."""
+        headers = await self._auth_headers(db_session, "chat_semana@example.com")
+        cat = await self._create_category(client, headers)
+
+        mock_create = _mock_tool_use("registrar_transacao", {"category_name": cat["name"], "description": "Uber", "amount": 20.0})
+        with patch("app.services.ai_service.AsyncOpenAI", return_value=mock_create):
+            await client.post("/api/chat/", headers=headers, json={"message": "gastei 20 no uber"})
+
+        mock_list = _mock_tool_use("listar_transacoes", {"date_filter": "semana"})
+        with patch("app.services.ai_service.AsyncOpenAI", return_value=mock_list):
+            resp = await client.post(
+                "/api/chat/",
+                headers=headers,
+                json={"message": "gastos da semana"},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["action"] == "list_transactions"
+        assert len(data["transactions"]) >= 1
+        assert "últimos 7 dias" in data["reply"]
+        assert "Total" in data["reply"]
+
+    async def test_chat_listar_transacoes_hoje_vazio(self, client: AsyncClient, db_session):
+        """listar_transacoes com date_filter='hoje' sem transações retorna mensagem vazia."""
+        headers = await self._auth_headers(db_session, "chat_hoje_empty@example.com")
+        await self._create_category(client, headers)
+
+        mock_list = _mock_tool_use("listar_transacoes", {"date_filter": "hoje"})
+        with patch("app.services.ai_service.AsyncOpenAI", return_value=mock_list):
+            resp = await client.post(
+                "/api/chat/",
+                headers=headers,
+                json={"message": "quanto gastei hoje?"},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["action"] == "list_transactions"
+        assert not data["transactions"]
+        assert "hoje" in data["reply"]
+
     # --- BDD: Criar categoria com nome duplicado ---
 
     async def test_chat_create_category_duplicate_name(self, client: AsyncClient, db_session):

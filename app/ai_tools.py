@@ -115,10 +115,16 @@ CHAT_COMPLETION_TOOLS: list[ChatCompletionToolParam] = [
         "type": "function",
         "function": {
             "name": "listar_transacoes",
-            "description": "Lista as transações financeiras recentes do usuário.",
+            "description": "Lista as transações financeiras do usuário, com filtro de período opcional.",
             "parameters": {
                 "type": "object",
-                "properties": {},
+                "properties": {
+                    "date_filter": {
+                        "type": "string",
+                        "enum": ["hoje", "semana", "mes"],
+                        "description": "Filtra por período: 'hoje' para gastos do dia, 'semana' para os últimos 7 dias, 'mes' para o mês atual. Omitir retorna as 10 mais recentes.",
+                    },
+                },
                 "required": [],
             },
         },

@@ -1,3 +1,4 @@
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -164,23 +165,50 @@ async def _handle_deletar_categoria(
     return ChatProcessResult(reply=reply, action="delete_category")
 
 
+def _apply_date_filter(transactions: list[Transaction], date_filter: str | None) -> tuple[list[Transaction], str]:
+    now = datetime.now(timezone.utc)
+    if date_filter == "hoje":
+        cutoff = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        label = "hoje"
+    elif date_filter == "semana":
+        cutoff = now - timedelta(days=7)
+        label = "nos últimos 7 dias"
+    elif date_filter == "mes":
+        cutoff = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        label = f"em {now.strftime('%B/%Y')}"
+    else:
+        return sorted(transactions, key=lambda t: t.created_at, reverse=True)[:10], ""
+
+    filtered = [
+        t for t in transactions
+        if t.created_at.replace(tzinfo=timezone.utc) >= cutoff
+    ]
+    return sorted(filtered, key=lambda t: t.created_at, reverse=True), label
+
+
 async def _handle_listar_transacoes(
     db: AsyncSession, user_id: str, message: str, args: dict, categories: list[Category]
 ) -> ChatProcessResult:
     all_transactions = await transaction_service.list_transactions(db, user_id)
-    recent = sorted(all_transactions, key=lambda t: t.created_at, reverse=True)[:10]
-    if not recent:
-        reply = "Você não tem nenhuma transação registrada ainda, não!"
+    date_filter = args.get("date_filter")
+    filtered, label = _apply_date_filter(all_transactions, date_filter)
+
+    if not filtered:
+        period = f" {label}" if label else ""
+        reply = f"Você não tem nenhuma transação registrada{period}, não!"
     else:
         cat_map = {c.id: c for c in categories}
         lines = []
-        for t in recent:
+        total = Decimal(0)
+        for t in filtered:
             cat = cat_map.get(t.category_id)
             cat_name = cat.name if cat else "?"
             lines.append(f"• {t.description} — {cat_name} — R${t.amount:.2f} — {t.created_at.strftime('%d/%m/%Y')}")
-        reply = "Suas últimas transações:\n" + "\n".join(lines)
+            total += t.amount
+        header = f"Seus gastos {label}:" if label else "Suas últimas transações:"
+        reply = header + "\n" + "\n".join(lines) + f"\n\nTotal: R${total:.2f}"
     await _save_messages(db, user_id, message, reply, None)
-    return ChatProcessResult(reply=reply, action="list_transactions", transactions=recent)
+    return ChatProcessResult(reply=reply, action="list_transactions", transactions=filtered)
 
 
 async def _handle_editar_transacao(
