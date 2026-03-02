@@ -2,6 +2,8 @@
 Testes unitários do chat_service — foco em _apply_date_filter.
 """
 from datetime import datetime, timezone, timedelta
+
+_BRT = timezone(timedelta(hours=-3))
 from unittest.mock import MagicMock
 
 import pytest
@@ -65,14 +67,14 @@ class TestApplyDateFilter:
         assert label == "nos últimos 7 dias"
 
     def test_mes_includes_current_month(self):
-        """date_filter='mes' retorna transações do mês atual."""
-        now = _now()
-        start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        this_month = _make_transaction(start_of_month + timedelta(hours=1))
-        last_month = _make_transaction(start_of_month - timedelta(days=1))
+        """date_filter='mes' retorna transações do mês atual (início calculado em BRT)."""
+        now_brt = FIXED_NOW.astimezone(_BRT)
+        brt_start_utc = now_brt.replace(day=1, hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+        this_month = _make_transaction(brt_start_utc + timedelta(hours=1))
+        last_month = _make_transaction(brt_start_utc - timedelta(days=1))
         result, label = _apply_date_filter([this_month, last_month], "mes")
         assert len(result) == 1
-        assert "mes" in label or now.strftime("%B") in label or "/" in label
+        assert "mes" in label or now_brt.strftime("%B") in label or "/" in label
 
     def test_result_sorted_most_recent_first(self):
         """Transações filtradas são retornadas da mais recente para a mais antiga."""
