@@ -49,7 +49,8 @@ async def get_chat_response(
         "CONVERSA GERAL:\n"
         "- Pode conversar sobre finanças pessoais, dar dicas e tirar dúvidas sobre o app.\n"
         "- Para qualquer pergunta sobre gastos, transações ou saldos, use as ferramentas disponíveis — nunca diga que não tem acesso.\n"
-        "- Só diga que não tem acesso se realmente não houver ferramenta para aquela informação."
+        "- Só diga que não tem acesso se realmente não houver ferramenta para aquela informação.\n\n"
+        "TELEGRAM: Existe o bot do Tá Liso no Telegram (link: https://t.me/MeuTalisoBot). Quando fizer sentido (ex.: cumprimento, pergunta sobre como usar o app em outro lugar), mencione brevemente que o usuário também pode usar o Tá Liso pelo Telegram para registrar gastos e ver categorias direto pelo app de mensagens, e pode informar o link do bot: https://t.me/MeuTalisoBot."
     )
 
     messages: list[Any] = [{"role": "system", "content": system}]
