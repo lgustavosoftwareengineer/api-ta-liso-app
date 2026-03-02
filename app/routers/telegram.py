@@ -12,6 +12,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["telegram"])
 
 
+@router.get("/webhooks/telegram/status")
+async def telegram_status():
+    """Diagnóstico: indica se token e secret estão configurados (não expõe os valores)."""
+    settings = get_settings()
+    return {
+        "telegram_bot_token_configured": bool(settings.telegram_bot_token),
+        "telegram_webhook_secret_configured": bool(settings.telegram_webhook_secret),
+    }
+
+
 async def _process_webhook_task(chat_id: int, text: str) -> None:
     """Run in background with its own DB session."""
     try:
