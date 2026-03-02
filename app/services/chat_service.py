@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import InsufficientBalanceError
-from app.helpers.chat_helpers import message_to_simple_string, normalize_category_name
+from app.helpers.chat_helpers import dedup_response_lines, message_to_simple_string, normalize_category_name
 from app.models.category import Category
 from app.models.chat_message import ChatMessage
 from app.models.transaction import Transaction
@@ -21,6 +21,13 @@ from app.services import transactions as transaction_service
 def _utcnow() -> datetime:
     """Current time in UTC (extracted for testability)."""
     return datetime.now(timezone.utc)
+
+
+async def clear_history(db: AsyncSession, user_id: str) -> None:
+    """Delete all chat messages for the user."""
+    from sqlalchemy import delete
+    await db.execute(delete(ChatMessage).where(ChatMessage.user_id == user_id))
+    await db.commit()
 
 
 async def list_history(db: AsyncSession, user_id: str) -> list[ChatMessage]:
@@ -343,7 +350,7 @@ async def process_message(
     response = await ai_service.get_chat_response(message, history, categories)
 
     if isinstance(response, str):
-        return await _reject(db, user_id, message, response)
+        return await _reject(db, user_id, message, dedup_response_lines(response))
 
     if response is None:
         return await _reject(db, user_id, message, "Não entendi. Pode repetir de outro jeito?")

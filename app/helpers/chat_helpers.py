@@ -75,6 +75,18 @@ def extract_tool_args_from_content(content: str) -> dict | None:
     return None
 
 
+def dedup_response_lines(text: str) -> str:
+    """Remove duplicate lines from AI response (prevents echoed history from accumulating in DB)."""
+    seen: set[str] = set()
+    result = []
+    for line in text.split("\n"):
+        key = line.strip()
+        if key not in seen:
+            seen.add(key)
+            result.append(line)
+    return "\n".join(result).strip()
+
+
 def normalize_category_name(raw: str) -> str:
     """Strip optional surrounding double quotes from category name for matching."""
     s = raw.strip()

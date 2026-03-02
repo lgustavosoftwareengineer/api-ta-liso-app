@@ -30,6 +30,7 @@ COMMANDS_HELP = (
     "/gastos hoje — Gastos de hoje\n"
     "/gastos semana — Últimos 7 dias\n"
     "/gastos mes — Mês atual\n\n"
+    "/limpar — Apagar histórico do chat\n\n"
     "/ajuda — Esta mensagem\n\n"
     "💬 Você também pode escrever naturalmente, tipo:\n"
     "\"Gastei 50 reais no mercado, Alimentação\""
@@ -181,6 +182,10 @@ async def _handle_command(db: AsyncSession, user_id: str, text: str) -> str:
 
     if cmd in ("/start", "/ajuda"):
         return COMMANDS_HELP
+
+    if cmd == "/limpar":
+        await chat_service.clear_history(db, user_id)
+        return "🗑️ Histórico do chat apagado. Pode começar de novo!"
 
     if cmd == "/categorias":
         result = await chat_service.process_message(db, user_id, "listar categorias")

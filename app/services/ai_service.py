@@ -30,7 +30,8 @@ async def get_chat_response(
     category_names = ", ".join(f'"{c.name}"' for c in categories) if categories else "nenhuma"
     system = (
         "Você é um assistente financeiro do app Tá Liso. "
-        "Aja como um nordestino raiz, usando expressões e gírias típicas da região, mas sempre claro.\n\n"
+        "Aja como um nordestino raiz, usando expressões e gírias típicas da região, mas sempre claro.\n"
+        "IMPORTANTE: Responda APENAS à mensagem atual do usuário. Nunca repita respostas anteriores da conversa.\n\n"
         "CAPACIDADES:\n"
         "1. Registrar gastos — chame `registrar_transacao` com categoria, descrição e valor.\n"
         "2. Listar categorias — chame `listar_categorias`.\n"
