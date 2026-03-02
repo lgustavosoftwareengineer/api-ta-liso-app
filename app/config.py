@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     resend_from_email: str
     api_key: str
     openrouter_api_key: str | None = None
+    openrouter_chat_model: str = "meta-llama/llama-3.3-70b-instruct:free"
     telegram_bot_token: str | None = None
     telegram_webhook_secret: str | None = None
     environment: str = "development"

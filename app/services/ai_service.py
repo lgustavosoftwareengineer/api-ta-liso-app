@@ -62,9 +62,9 @@ async def get_chat_response(
         base_url="https://openrouter.ai/api/v1",
         api_key=get_settings().openrouter_api_key,
     )
+    settings = get_settings()
     response = await client.chat.completions.create(
-        # model="google/gemini-2.5-flash",
-        model="meta-llama/llama-3.3-70b-instruct:free",
+        model=settings.openrouter_chat_model,
         messages=cast(list[ChatCompletionMessageParam], messages),
         tools=CHAT_COMPLETION_TOOLS,
         tool_choice="auto",
