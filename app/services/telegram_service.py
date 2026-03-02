@@ -30,7 +30,8 @@ COMMANDS_HELP = (
     "/gastos hoje — Gastos de hoje\n"
     "/gastos semana — Últimos 7 dias\n"
     "/gastos mes — Mês atual\n\n"
-    "/limpar — Apagar histórico do chat\n\n"
+    "/limpar — Apagar histórico do chat\n"
+    "/sair — Desvincular conta\n\n"
     "/ajuda — Esta mensagem\n\n"
     "💬 Você também pode escrever naturalmente, tipo:\n"
     "\"Gastei 50 reais no mercado, Alimentação\""
@@ -109,6 +110,13 @@ async def get_or_create_pending_auth(
     return pending
 
 
+async def disconnect_telegram_user(db: AsyncSession, chat_id: int) -> None:
+    """Remove the TelegramUser link for this chat_id."""
+    from sqlalchemy import delete
+    await db.execute(delete(TelegramUser).where(TelegramUser.telegram_chat_id == chat_id))
+    await db.commit()
+
+
 async def complete_registration(db: AsyncSession, chat_id: int) -> None:
     """Create TelegramUser for the pending auth and remove the pending record."""
     pending = await get_pending_auth(db, chat_id)
@@ -175,7 +183,7 @@ async def handle_registration_step(
     return "Por favor, envie o e-mail cadastrado no Tá Liso ou o código de 6 dígitos que enviamos."
 
 
-async def _handle_command(db: AsyncSession, user_id: str, text: str) -> str:
+async def _handle_command(db: AsyncSession, user_id: str, chat_id: int, text: str) -> str:
     """Handle slash commands for registered users. Returns reply text."""
     parts = text.strip().split()
     cmd = parts[0].lower()
@@ -186,6 +194,10 @@ async def _handle_command(db: AsyncSession, user_id: str, text: str) -> str:
     if cmd == "/limpar":
         await chat_service.clear_history(db, user_id)
         return "🗑️ Histórico do chat apagado. Pode começar de novo!"
+
+    if cmd == "/sair":
+        await disconnect_telegram_user(db, chat_id)
+        return "Conta desvinculada. Até logo! Para voltar, envie seu e-mail aqui."
 
     if cmd == "/categorias":
         result = await chat_service.process_message(db, user_id, "listar categorias")
@@ -220,7 +232,7 @@ async def handle_message(db: AsyncSession, chat_id: int, text: str) -> None:
     user = await get_user_by_telegram_chat_id(db, chat_id)
     if user is not None:
         if text.startswith("/"):
-            reply_text = await _handle_command(db, user.id, text)
+            reply_text = await _handle_command(db, user.id, chat_id, text)
         else:
             result = await chat_service.process_message(db, user.id, text)
             reply_text = format_reply(result)
