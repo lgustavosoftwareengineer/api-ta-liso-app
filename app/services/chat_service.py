@@ -177,33 +177,36 @@ async def _handle_deletar_categoria(
     return ChatProcessResult(reply=reply, action="delete_category")
 
 
+_BRT = timezone(timedelta(hours=-3))
+
+
 def _parse_date_filter(date_filter: str | None) -> tuple[datetime, datetime | None, str] | None:
     """
     Interpreta date_filter e retorna (início, fim ou None, label) ou None para "sem filtro".
-    - "hoje" -> dia atual (até agora)
+    - "hoje" -> dia atual em BRT (UTC-3)
     - "semana" -> últimos 7 dias
-    - "mes" -> mês atual
-    - "YYYY-MM-DD" -> dia exato (00:00 a 23:59:59)
-    Quando fim é None, considera até "agora".
+    - "mes" -> mês atual em BRT (UTC-3)
+    - "YYYY-MM-DD" -> dia exato interpretado em BRT
+    Todos os valores retornados estão em UTC para comparação com o DB.
     """
     if not date_filter or not date_filter.strip():
         return None
     date_filter = date_filter.strip()
-    now = _utcnow()
+    now_brt = _utcnow().astimezone(_BRT)
     if date_filter == "hoje":
-        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        start = now_brt.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
         return (start, None, "hoje")
     if date_filter == "semana":
-        start = now - timedelta(days=7)
+        start = _utcnow() - timedelta(days=7)
         return (start, None, "nos últimos 7 dias")
     if date_filter == "mes":
-        start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        return (start, None, f"em {now.strftime('%B/%Y')}")
-    # Data exata no formato ISO (YYYY-MM-DD)
+        start = now_brt.replace(day=1, hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+        return (start, None, f"em {now_brt.strftime('%B/%Y')}")
+    # Data exata no formato ISO (YYYY-MM-DD) — interpretada como dia em BRT
     try:
-        day = datetime.strptime(date_filter, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-        start = day.replace(hour=0, minute=0, second=0, microsecond=0)
-        end = start + timedelta(days=1) - timedelta(microseconds=1)
+        day = datetime.strptime(date_filter, "%Y-%m-%d")
+        start = day.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=_BRT).astimezone(timezone.utc)
+        end = (day.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=_BRT) + timedelta(days=1) - timedelta(microseconds=1)).astimezone(timezone.utc)
         label = day.strftime("%d/%m/%Y")
         return (start, end, f"em {label}")
     except ValueError:
