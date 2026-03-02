@@ -15,11 +15,20 @@ def _make_transaction(created_at: datetime) -> MagicMock:
     return t
 
 
+FIXED_NOW = datetime(2026, 3, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    # Use a deterministic value to avoid flakiness near UTC midnight.
+    return FIXED_NOW
 
 
 class TestApplyDateFilter:
+    @pytest.fixture(autouse=True)
+    def _freeze_utcnow(self, monkeypatch):
+        # chat_service._parse_date_filter uses _utcnow(); freeze it for deterministic tests.
+        monkeypatch.setattr("app.services.chat_service._utcnow", lambda: FIXED_NOW)
+
     def test_no_filter_returns_last_10(self):
         """Sem filtro retorna as 10 mais recentes em ordem decrescente."""
         txs = [_make_transaction(_now() - timedelta(days=i)) for i in range(15)]

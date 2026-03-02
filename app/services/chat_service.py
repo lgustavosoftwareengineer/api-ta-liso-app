@@ -18,6 +18,11 @@ from app.services import categories as category_service
 from app.services import transactions as transaction_service
 
 
+def _utcnow() -> datetime:
+    """Current time in UTC (extracted for testability)."""
+    return datetime.now(timezone.utc)
+
+
 async def list_history(db: AsyncSession, user_id: str) -> list[ChatMessage]:
     """Return full message history for the user in chronological order."""
     result = await db.execute(
@@ -177,7 +182,7 @@ def _parse_date_filter(date_filter: str | None) -> tuple[datetime, datetime | No
     if not date_filter or not date_filter.strip():
         return None
     date_filter = date_filter.strip()
-    now = datetime.now(timezone.utc)
+    now = _utcnow()
     if date_filter == "hoje":
         start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         return (start, None, "hoje")
