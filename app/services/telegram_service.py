@@ -21,6 +21,26 @@ logger = logging.getLogger(__name__)
 TELEGRAM_API_BASE = "https://api.telegram.org"
 EMAIL_REGEX = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
+COMMANDS_HELP = (
+    "📋 Comandos disponíveis:\n\n"
+    "/gasto <valor> <descrição> <categoria>\n"
+    "  Ex: /gasto 35 Almoço Alimentação\n\n"
+    "/categorias — Ver categorias e saldos\n\n"
+    "/gastos — Últimas transações\n"
+    "/gastos hoje — Gastos de hoje\n"
+    "/gastos semana — Últimos 7 dias\n"
+    "/gastos mes — Mês atual\n\n"
+    "/ajuda — Esta mensagem\n\n"
+    "💬 Você também pode escrever naturalmente, tipo:\n"
+    "\"Gastei 50 reais no mercado, Alimentação\""
+)
+
+_GASTOS_FILTER_PHRASES = {
+    "hoje": "listar transações hoje",
+    "semana": "listar transações semana",
+    "mes": "listar transações mes",
+}
+
 
 async def send_message(chat_id: int, text: str) -> None:
     """Send a text message to a Telegram chat via Bot API."""
@@ -154,12 +174,51 @@ async def handle_registration_step(
     return "Por favor, envie o e-mail cadastrado no Tá Liso ou o código de 6 dígitos que enviamos."
 
 
+async def _handle_command(db: AsyncSession, user_id: str, text: str) -> str:
+    """Handle slash commands for registered users. Returns reply text."""
+    parts = text.strip().split()
+    cmd = parts[0].lower()
+
+    if cmd in ("/start", "/ajuda"):
+        return COMMANDS_HELP
+
+    if cmd == "/categorias":
+        result = await chat_service.process_message(db, user_id, "listar categorias")
+        return format_reply(result)
+
+    if cmd == "/gastos":
+        filter_word = parts[1].lower() if len(parts) > 1 else ""
+        phrase = _GASTOS_FILTER_PHRASES.get(filter_word, "listar transações")
+        result = await chat_service.process_message(db, user_id, phrase)
+        return format_reply(result)
+
+    if cmd == "/gasto":
+        if len(parts) < 4:
+            return (
+                "Uso: /gasto <valor> <descrição> <categoria>\n"
+                "Exemplo: /gasto 35 Almoço Alimentação"
+            )
+        amount = parts[1]
+        category = parts[-1]
+        description = " ".join(parts[2:-1])
+        phrase = f"registrar gasto de R${amount} em {description} na categoria {category}"
+        result = await chat_service.process_message(db, user_id, phrase)
+        return format_reply(result)
+
+    # Comando desconhecido — passa ao chat_service como linguagem natural
+    result = await chat_service.process_message(db, user_id, text)
+    return format_reply(result)
+
+
 async def handle_message(db: AsyncSession, chat_id: int, text: str) -> None:
     """Main entry: route to registration or chat_service, then send reply."""
     user = await get_user_by_telegram_chat_id(db, chat_id)
     if user is not None:
-        result = await chat_service.process_message(db, user.id, text)
-        reply_text = format_reply(result)
+        if text.startswith("/"):
+            reply_text = await _handle_command(db, user.id, text)
+        else:
+            result = await chat_service.process_message(db, user.id, text)
+            reply_text = format_reply(result)
         await send_message(chat_id, reply_text)
         return
     pending = await get_pending_auth(db, chat_id)
