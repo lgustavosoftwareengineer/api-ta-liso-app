@@ -10,7 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 if TYPE_CHECKING:
     from app.models.telegram_user import TelegramUser
 
-from app.database import Base
+from app.base import Base
 
 
 class User(Base):
