@@ -3,10 +3,12 @@ Reset mensal automático (lazy reset): no primeiro acesso do novo mês,
 salva snapshot do mês anterior em category_monthly_snapshots e reseta
 current_balance das categorias para initial_amount.
 """
+import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import select, func
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.category import Category
@@ -85,15 +87,21 @@ async def ensure_monthly_reset(
         if isinstance(total_spent, (int, float)):
             total_spent = Decimal(str(total_spent))
 
-        snapshot = CategoryMonthlySnapshot(
-            category_id=category.id,
-            month=prev_month,
-            year=prev_year,
-            initial_amount=category.initial_amount,
-            total_spent=total_spent,
-            final_balance=category.current_balance,
+        await db.execute(
+            pg_insert(CategoryMonthlySnapshot)
+            .values(
+                id=str(uuid.uuid4()),
+                category_id=category.id,
+                month=prev_month,
+                year=prev_year,
+                initial_amount=category.initial_amount,
+                total_spent=total_spent,
+                final_balance=category.current_balance,
+            )
+            .on_conflict_do_nothing(
+                constraint='uq_category_monthly_snapshot_category_month_year'
+            )
         )
-        db.add(snapshot)
 
         category.current_balance = category.initial_amount
         category.reset_month = current_month

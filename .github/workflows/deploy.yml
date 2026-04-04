@@ -62,19 +62,6 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
           echo "image_uri=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-
-      - name: Terraform Init
-        working-directory: terraform
-        run: terraform init
-
-      - name: Terraform Apply
-        working-directory: terraform
-        env:
-          TF_VAR_image_uri: ${{ steps.build.outputs.image_uri }}
-        run: terraform apply -auto-approve
-
       - name: Run migrations
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -87,3 +74,16 @@ jobs:
             -e AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }} \
             $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
             python3 -m alembic upgrade head
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init
+
+      - name: Terraform Apply
+        working-directory: terraform
+        env:
+          TF_VAR_image_uri: ${{ steps.build.outputs.image_uri }}
+        run: terraform apply -auto-approve
