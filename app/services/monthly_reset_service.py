@@ -8,7 +8,6 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import select, func
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.category import Category
@@ -87,9 +86,15 @@ async def ensure_monthly_reset(
         if isinstance(total_spent, (int, float)):
             total_spent = Decimal(str(total_spent))
 
-        await db.execute(
-            pg_insert(CategoryMonthlySnapshot)
-            .values(
+        existing = await db.execute(
+            select(CategoryMonthlySnapshot).where(
+                CategoryMonthlySnapshot.category_id == category.id,
+                CategoryMonthlySnapshot.month == prev_month,
+                CategoryMonthlySnapshot.year == prev_year,
+            )
+        )
+        if existing.scalar_one_or_none() is None:
+            db.add(CategoryMonthlySnapshot(
                 id=str(uuid.uuid4()),
                 category_id=category.id,
                 month=prev_month,
@@ -97,11 +102,7 @@ async def ensure_monthly_reset(
                 initial_amount=category.initial_amount,
                 total_spent=total_spent,
                 final_balance=category.current_balance,
-            )
-            .on_conflict_do_nothing(
-                constraint='uq_category_monthly_snapshot_category_month_year'
-            )
-        )
+            ))
 
         category.current_balance = category.initial_amount
         category.reset_month = current_month
